@@ -24,12 +24,25 @@ let rec listFilesRecursively dir =
     |> Seq.collect listFilesRecursively
     |> Seq.append (listFiles dir)
 
+let notIn excludedFiles image =
+    excludedFiles
+    |> Seq.map (fun i -> i.name)
+    |> Seq.contains image.name
+    |> not
+
 let prepareForSorting prepare =
     printfn "from %s to %s:" prepare.source prepare.target
 
-    let files =
+    let allFilesInSource =
         prepare.source
         |> listFilesRecursively
+
+    let files =
+        match prepare.exclude with
+        | Some excludeDir ->
+            let excludedFiles = excludeDir |> listFilesRecursively
+            allFilesInSource |> Seq.filter (notIn excludedFiles)
+        | None -> allFilesInSource        
 
     printfn "Files: %d" (Seq.length files)
 
