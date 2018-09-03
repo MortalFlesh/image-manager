@@ -4,8 +4,12 @@
     <TargetFramework>netcoreapp2.1</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Console/Main.fs" />
     <Compile Include="ImageManager/Types.fs" />
     <Compile Include="ImageManager/PrepareForSorting.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Colorful.Console" Version="1.2.9" />
   </ItemGroup>
 </Project>
