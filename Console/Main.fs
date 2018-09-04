@@ -2,8 +2,10 @@
 
 module Console
 
+open System
 open System.Drawing
 open Colorful
+open ShellProgressBar
 
 type Color =
 | Title
@@ -80,6 +82,21 @@ let NewLine () =
 let Ask (question: string) =
     Console.Write(question + " ", color Color.SubTitle)
     Console.ReadLine()
+
+let ProgressStart initialMessage total =
+    let options = new ProgressBarOptions()
+    options.ForegroundColor <- ConsoleColor.Yellow
+    options.ForegroundColorDone <- Nullable<ConsoleColor>(ConsoleColor.DarkGreen)
+    options.BackgroundColor <- Nullable<ConsoleColor>(ConsoleColor.DarkGray)
+    options.BackgroundCharacter <- Nullable<char>('\u2593')
+    options.DisplayTimeInRealTime <- true
+    options.ProgressBarOnBottom <- true
+
+    new ProgressBar(total, initialMessage, options)
+
+let ProgressFinish (progress: ProgressBar) =
+    progress.Message <- "Finished"
+    progress.Dispose()
 
 let CommandList options commands =
     let maxLength =
