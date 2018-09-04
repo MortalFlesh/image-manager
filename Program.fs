@@ -9,12 +9,6 @@ type Command =
 | List
 | PrepareForSorting of PrepareForSorting
 
-let listCommands () =
-    ["prepare SOURCE TARGET [EXCLUDE]";"list"]
-    |> List.map (sprintf "- %s")
-    |> String.concat "\n"
-    |> sprintf "Available commands:\n%s"
-
 [<EntryPoint>]
 let main argv =
     Console.Title "Image Manager"
@@ -30,17 +24,21 @@ let main argv =
         match command with
         | List ->
             Console.CommandList
-            <| []
+            <| [("help", "Display help for a command")]
             <| [
+                ("list", "Lists commands")
                 ("prepare", "Prepares images for sorting")
             ]
             0
         | PrepareForSorting p ->
+            Console.Section (sprintf "Prepare from %s to %s:" p.source p.target)
+
             let (message, result) = prepareForSorting p
-            Console.Message message
+            Console.Success message
             result
         | Invalid ->
             Console.Error "Invalid command"
             1
+
     Console.NewLine ()
     result

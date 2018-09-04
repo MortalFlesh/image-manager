@@ -9,13 +9,21 @@ type Color =
 | Title
 | SubTitle
 | Section
+| Success
 | Error
 
 let private color = function
 | Title -> Color.Cyan
 | SubTitle -> Color.Yellow
 | Section -> Color.Yellow
+| Success -> Color.LimeGreen
 | Error -> Color.Red
+
+let private maxLength options =
+    options
+    |> Seq.map fst
+    |> Seq.maxBy String.length
+    |> String.length
 
 let Title title =
     Console.WriteAscii(title, color Color.Title)
@@ -32,6 +40,9 @@ let SubTitle (subTitle: string) =
 
 let Error (message: string) =
     Console.WriteLine(message, color Color.Error)
+
+let Success (message: string) =
+    Console.WriteLine(message, color Color.Success)
 
 let Message message = 
     printfn "%s" message
@@ -52,7 +63,7 @@ let Indentation =
 let Indent value =
     Indentation + value
 
-let Options maxLength title options =
+let private optionsList maxLength title options =
     SubTitle title
     options
     |> Seq.map (fun (command, description) ->
@@ -60,16 +71,21 @@ let Options maxLength title options =
     )
     |> Messages Indentation
 
+let Options title options =
+    optionsList (options |> maxLength) title options
+
 let NewLine () =
     Message ""
+
+let Ask (question: string) =
+    Console.Write(question + " ", color Color.SubTitle)
+    Console.ReadLine()
 
 let CommandList options commands =
     let maxLength =
         options
         |> Seq.append commands
-        |> Seq.map fst
-        |> Seq.maxBy String.length
-        |> String.length
+        |> maxLength
 
     SubTitle "Usage:"
 
@@ -79,12 +95,10 @@ let CommandList options commands =
 
     NewLine ()
 
-    [("help", "Display help for a command")]
-    |> Seq.append options
-    |> Options maxLength "Options:"
+    options
+    |> optionsList maxLength "Options:"
 
     NewLine ()
 
-    [("list", "Lists commands")]
-    |> Seq.append commands
-    |> Options maxLength "Available commands:"
+    commands
+    |> optionsList maxLength "Available commands:"

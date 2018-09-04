@@ -8,7 +8,7 @@ type Image = {
     fullPath: string
 }
 
-let rec listFilesRecursively dir =
+let rec private listFilesRecursively dir =
     let listFiles dir =
         let ignored = [".DS_Store"]
         Directory.GetFiles(dir)
@@ -24,30 +24,34 @@ let rec listFilesRecursively dir =
     |> Seq.collect listFilesRecursively
     |> Seq.append (listFiles dir)
 
-let notIn excludedFiles image =
+let private notIn excludedFiles image =
     excludedFiles
     |> Seq.map (fun i -> i.name)
     |> Seq.contains image.name
     |> not
 
+let private copy (source, target) =
+    File.Copy(source, target, true)
+
 let prepareForSorting prepare =
-    printfn "from %s to %s:" prepare.source prepare.target
+    Directory.CreateDirectory(prepare.target) |> ignore
 
     let allFilesInSource =
         prepare.source
         |> listFilesRecursively
 
-    let files =
+    let filesToCopy =
         match prepare.exclude with
         | Some excludeDir ->
             let excludedFiles = excludeDir |> listFilesRecursively
             allFilesInSource |> Seq.filter (notIn excludedFiles)
-        | None -> allFilesInSource        
+        | None -> allFilesInSource
 
-    printfn "Files: %d" (Seq.length files)
-
-    files
-    |> Seq.map (fun i -> i.fullPath)
-    |> Seq.iter (printfn "- %s")
+    filesToCopy
+    |> Seq.map (fun i ->
+        (i.fullPath, Path.Combine(prepare.target, i.name))
+    )
+    //|> Console.Options "Files to copy:"
+    |> Seq.iter copy
 
     ("Done", 0)
