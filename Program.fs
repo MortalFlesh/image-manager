@@ -1,6 +1,7 @@
 ﻿// Learn more about F# at http://fsharp.org
 
 open System
+open MF.ConsoleStyle
 open ImageManager.Types
 open ImageManager.PrepareForSorting
 
@@ -11,7 +12,7 @@ type Command =
 
 [<EntryPoint>]
 let main argv =
-    Console.Title "Image Manager"
+    Console.title "Image Manager"
 
     let command =
         match argv with
@@ -23,7 +24,7 @@ let main argv =
     let result =
         match command with
         | List ->
-            Console.CommandList
+            Console.commandList
             <| [("help", "Display help for a command")]
             <| [
                 ("list", "Lists commands")
@@ -31,14 +32,14 @@ let main argv =
             ]
             0
         | PrepareForSorting p ->
-            Console.Section (sprintf "Prepare from %s to %s:" p.source p.target)
+            Console.section (sprintf "Prepare from %s to %s:" p.source p.target)
 
             let (message, result) = prepareForSorting p
-            Console.Success message
+            Console.success message
             result
         | Invalid ->
-            Console.Error "Invalid command"
+            Console.error "Invalid command"
             1
 
-    Console.NewLine ()
+    Console.newLine ()
     result
