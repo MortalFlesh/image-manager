@@ -46,11 +46,15 @@ let prepareForSorting prepare =
     Console.subTitle "Exclude images from source by excluded dir"
     let filesToCopy =
         match prepare.exclude with
-        | Some excludeDir ->
+        | Some excludeDirs ->
             let excludedFiles =
-                excludeDir
-                |> listFilesRecursively
-                |> List.map (fun i -> i.name)
+                excludeDirs
+                |> List.collect (fun excludeDir ->
+                    excludeDir
+                    |> listFilesRecursively
+                    |> List.map (fun i -> i.name)
+                )
+                |> List.distinct
 
             let excludeCount = excludedFiles |> List.length
             Console.message (sprintf "Exclude %i images" excludeCount)

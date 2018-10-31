@@ -16,9 +16,10 @@ let main argv =
 
     let command =
         match argv with
-        | [|"prepare";source;target|] -> PrepareForSorting { source = source; target = target; exclude = None }
-        | [|"prepare";source;target;exclude|] -> PrepareForSorting { source = source; target = target; exclude = Some exclude }
         | [|"list"|] -> List
+        | [|"prepare";source;target;exclude;exclude2|] -> PrepareForSorting { source = source; target = target; exclude = Some [exclude; exclude2] }
+        | [|"prepare";source;target;exclude|] -> PrepareForSorting { source = source; target = target; exclude = Some [exclude] }
+        | [|"prepare";source;target|] -> PrepareForSorting { source = source; target = target; exclude = None }
         | _ -> Invalid
 
     let result =

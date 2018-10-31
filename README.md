@@ -3,6 +3,11 @@ Image Manager
 
 Simple console app for managing images.
 
+## Release
+```sh
+dotnet publish -c Release -o image-manager
+```
+
 ## Commands
 
 ### List
