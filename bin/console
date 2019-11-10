@@ -1,0 +1,3 @@
+#!/bin/bash
+
+dotnet bin/Debug/netcoreapp3.0/image-manager.dll $@
