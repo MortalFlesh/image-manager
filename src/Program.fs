@@ -17,7 +17,9 @@ let main argv =
                 Argument.required "target" "Directory you want to copy files to."
                 Argument.optionalArray "exclude" "Directories you want to exclude from searching." None
             ]
-            Options = []
+            Options = [
+                Option.noValue "force" (Some "f") "If set, target directory will NOT be excluded, and images may be overwritten."
+            ]
             Initialize = None
             Interact = None
             Execute = fun (input, output) ->
@@ -33,6 +35,10 @@ let main argv =
                 {
                     Source = source
                     Target = target
+                    TargetDirMode =
+                        match input with
+                        | Input.IsSetOption "force" _ -> Override
+                        | _ -> Exclude
                     Exclude =
                         match exclude with
                         | [] -> None

@@ -1,8 +1,13 @@
 namespace MF.ImageManager
 
+type TargetDirMode =
+    | Override
+    | Exclude
+
 type PrepareForSorting = {
     Source: string
     Target: string
+    TargetDirMode: TargetDirMode
     Exclude: string list option
 }
 
@@ -22,7 +27,7 @@ module Prepare =
 
     let private notIn excludedFiles (image: Image) =
         excludedFiles
-        |> Seq.contains image.Name
+        |> List.contains image.Name
         |> not
 
     let private findAllImages dir =
@@ -47,14 +52,26 @@ module Prepare =
             |> findAllImages
         output.Message <| sprintf "Found %i images" (allImagesInSource |> Seq.length)
 
-        output.SubTitle "Exclude images from source by excluded dir"
+        output.SubTitle "Exclude images from source by excluded dirs"
+        let excludeDirs =
+            match prepare.TargetDirMode, prepare.Exclude with
+            | Override, Some excludeDirs -> Some excludeDirs
+            | Exclude, Some excludeDirs -> Some (prepare.Target :: excludeDirs)
+            | Exclude, None -> Some [ prepare.Target ]
+            | _ -> None
+
         let filesToCopy =
-            match prepare.Exclude with
+            match excludeDirs with
             | Some excludeDirs ->
                 let excludedFiles =
                     excludeDirs
-                    |> FileSystem.getAllFiles
                     |> List.distinct
+                    |> FileSystem.getAllFiles
+                    |> List.map Path.GetFileName
+                    |> List.distinct
+
+                if output.IsVeryVerbose() then
+                    output.List excludedFiles
 
                 output.Message <| sprintf "Exclude %i images" (excludedFiles |> List.length)
 
@@ -65,6 +82,13 @@ module Prepare =
                 output.Message <| sprintf "Filtered %i images" (result |> List.length)
                 result
             | None -> allImagesInSource
+
+        if output.IsVeryVerbose() then
+            output.Message "All images:"
+            output.List (allImagesInSource |> List.map Image.name)
+
+            output.Message "Files to copy:"
+            output.List (filesToCopy |> List.map Image.name)
 
         let progress =
             filesToCopy
