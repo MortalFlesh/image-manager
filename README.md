@@ -1,11 +1,13 @@
 Image Manager
 =============
 
-Simple console app for managing images.
+> Simple console app for managing images.
 
 ## Release
+Compiled files will be in /dist/ directory.
+
 ```sh
-dotnet publish -c Release -o image-manager
+fake build target Release
 ```
 
 ## Commands
@@ -17,12 +19,15 @@ dotnet run list
 ```
 ```
 Available commands:
-- prepare
-- list
+    help     Displays help for a command
+    list     Lists commands
+    prepare  Prepares images for sorting
 ```
 
 ### Prepare for sorting
-Prepares images from source dir (_recursively_) into the target dir, it might exclude images from a specific dir (_recursively_).
+Prepares images from source dir (_recursively_) into the target dir, it may exclude images from a specific dir (_recursively_).
+
+Target directory is automatically added to excluded directories - it means, files which are already in the target directory, will never be overwritten (unless `--force` option is set).
 
 #### Examples
 ```sh
