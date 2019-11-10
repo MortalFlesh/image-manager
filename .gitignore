@@ -1,3 +1,28 @@
-bin/
-obj/
-image-manager/
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# Paket dependency manager
+.paket/
+packages/
+paket-files/
+
+# FAKE - F# Make
+.fake/
+
+# Ionide
+.ionide/
+
+# Tools
+tools/
+
+# Console
+!bin/console
