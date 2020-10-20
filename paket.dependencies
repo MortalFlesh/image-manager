@@ -1,9 +1,9 @@
-framework: netcoreapp3.0
+framework: netcoreapp3.1
 storage: none
 
 source https://api.nuget.org/v3/index.json
-nuget FSharp.Core
-nuget MF.ConsoleApplication ~> 1.0
+nuget FSharp.Core ~> 4.7
+nuget MF.ConsoleApplication ~> 2.0
 
 // [ FAKE GROUP ]
 group Build
@@ -11,5 +11,8 @@ group Build
     source https://api.nuget.org/v3/index.json
     nuget Fake.DotNet.Cli
     nuget Fake.IO.FileSystem
+    nuget Fake.IO.Zip
     nuget Fake.Core.Target
-    nuget Fake.Core.UserInput
+    nuget Fake.DotNet.AssemblyInfoFile
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Tools.Git
