@@ -5,7 +5,7 @@ type TargetDirMode =
     | Exclude
 
 type PrepareForSorting = {
-    Source: string
+    Source: string list
     Target: string
     TargetDirMode: TargetDirMode
     Exclude: string list option
@@ -49,7 +49,9 @@ module Prepare =
         output.SubTitle "Find all images in source"
         let allImagesInSource =
             prepare.Source
-            |> findAllImages
+            |> List.distinct
+            |> List.collect findAllImages
+            |> List.distinct
         output.Message <| sprintf "Found %i images" (allImagesInSource |> Seq.length)
 
         output.SubTitle "Exclude images from source by excluded dirs"

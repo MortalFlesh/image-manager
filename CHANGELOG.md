@@ -8,3 +8,4 @@
 - Use paket, FAKE and update to dotnet core 3.0
 - Automatically exclude a target directory
 - Add `force` option
+- Allow multiple sources

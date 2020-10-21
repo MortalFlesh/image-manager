@@ -6,24 +6,28 @@ open MF.ImageManager
 [<RequireQualifiedAccess>]
 module PrepareCommand =
     let arguments = [
-        Argument.required "source" "Directory you want to search files."
         Argument.required "target" "Directory you want to copy files to."
-        Argument.optionalArray "exclude" "Directories you want to exclude from searching." None
     ]
 
     let options = [
+        Option.requiredArray "source" (Some "s") "Directory you want to search files." (Some [])
+        Option.requiredArray "exclude" (Some "e") "Directories you want to exclude from searching." None
         Option.noValue "force" (Some "f") "If set, target directory will NOT be excluded, and images may be overwritten."
     ]
 
     let execute ((input, output): IO) =
-        let source = input |> Input.getArgumentValue "source"
+        let source = input |> Input.getOptionValueAsList "source"
         let target = input |> Input.getArgumentValue "target"
-        let exclude = input |> Input.getArgumentValueAsList "exclude"
+        let exclude = input |> Input.getOptionValueAsList "exclude"
 
         if output.IsVerbose() then
-            output.Table ["Source"; "Target"; "Exclude"] [[source; target; exclude |> sprintf "%A"]]
+            output.Table ["Source"; "Target"; "Exclude"] [[source; [target]; exclude] |> List.map (sprintf "%A")]
 
-        output.Section (sprintf "Prepare from %s to %s:" source target)
+        output.Section (
+            sprintf "Prepare to %s from:\n - %s"
+                target
+                (source |> String.concat "\n - ")
+        )
 
         {
             Source = source
