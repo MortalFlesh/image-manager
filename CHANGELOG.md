@@ -10,3 +10,4 @@
 - Add `force` option
 - Allow multiple sources
 - Allow to exclude images from a file
+- Allow to dry-run the preparation

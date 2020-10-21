@@ -12,16 +12,25 @@ module PrepareCommand =
 
     let options = [
         Option.requiredArray "source" (Some "s") "Directory you want to search files." (Some [])
-        Option.requiredArray "exclude" (Some "e") "Directories you want to exclude from searching." None
-        Option.required "exclude-list" (Some "x") "Text file contains a list of files you want to exclude from searching (<c:yellow>one file at line</c>)." None
+        Option.optionalArray "exclude" (Some "e") "Directories you want to exclude from searching." None
+        Option.optional "exclude-list" (Some "x") "Text file contains a list of files you want to exclude from searching (<c:yellow>one file at line</c>)." None
         Option.noValue "force" (Some "f") "If set, target directory will NOT be excluded, and images may be overwritten."
+        Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and images will only be sent to stdout."
     ]
 
     let execute ((input, output): IO) =
         let source = input |> Input.getOptionValueAsList "source"
         let target = input |> Input.getArgumentValue "target"
-        let exclude = input |> Input.getOptionValueAsList "exclude"
-        let excludeList = input |> Input.getOptionValueAsString "exclude-list"
+        let exclude =
+            match input with
+            | Input.HasOption "exclude" _ ->
+                input |> Input.getOptionValueAsList "exclude"
+            | _ -> []
+        let excludeList =
+            match input with
+            | Input.HasOption "exclude-list" _ ->
+                input |> Input.getOptionValueAsString "exclude-list"
+            | _ -> None
 
         if output.IsVerbose() then
             output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"]
@@ -39,6 +48,7 @@ module PrepareCommand =
             TargetDirMode =
                 match input with
                 | Input.IsSetOption "force" _ -> Override
+                | Input.IsSetOption "dry-run" _ -> DryRun
                 | _ -> Exclude
             Exclude =
                 match exclude with

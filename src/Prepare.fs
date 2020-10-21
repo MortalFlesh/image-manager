@@ -3,6 +3,7 @@ namespace MF.ImageManager
 type TargetDirMode =
     | Override
     | Exclude
+    | DryRun
 
 type PrepareForSorting = {
     Source: string list
@@ -127,8 +128,12 @@ module Prepare =
 
         filesToCopy
         |> List.iter (fun image ->
-            (image.FullPath, Path.Combine(prepare.Target, image.Name))
-            |> FileSystem.copy
+            match prepare.TargetDirMode with
+            | DryRun ->
+                output.Message <| sprintf " * <c:cyan>%s</c> -> <c:green>%s</c>" image.FullPath (Path.Combine(prepare.Target, image.Name))
+            | _ ->
+                (image.FullPath, Path.Combine(prepare.Target, image.Name))
+                |> FileSystem.copy
 
             progress |> output.ProgressAdvance
         )
