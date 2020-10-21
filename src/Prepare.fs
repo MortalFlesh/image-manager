@@ -9,6 +9,7 @@ type PrepareForSorting = {
     Target: string
     TargetDirMode: TargetDirMode
     Exclude: string list option
+    ExcludeList: string option
 }
 
 type Image = {
@@ -24,6 +25,10 @@ module Prepare =
     open System.IO
     open MF.ConsoleApplication
     open MF.Utils
+
+    type private FileOrDir =
+        | File of string
+        | Dir of string
 
     let private notIn excludedFiles (image: Image) =
         excludedFiles
@@ -62,6 +67,27 @@ module Prepare =
             | Exclude, None -> Some [ prepare.Target ]
             | _ -> None
 
+        let excludeFiles, excludeDirs =
+            match prepare.ExcludeList with
+            | Some excludeList ->
+                let excludeDirs =
+                    match excludeDirs with
+                    | Some excludeDirs -> excludeDirs
+                    | _ -> []
+
+                let excludeFiles, excludeDirs =
+                    excludeList
+                    |> File.ReadAllLines
+                    |> Seq.fold (fun (excludeFiles, excludeDirs) f ->
+                        let attr = f |> File.GetAttributes
+
+                        if attr.HasFlag(FileAttributes.Directory) then excludeFiles, f :: excludeDirs
+                        else f :: excludeFiles, excludeDirs
+                    ) ([], excludeDirs)
+
+                excludeFiles, (if excludeDirs |> List.isEmpty then None else Some excludeDirs)
+            | None -> [], excludeDirs
+
         let filesToCopy =
             match excludeDirs with
             | Some excludeDirs ->
@@ -69,6 +95,7 @@ module Prepare =
                     excludeDirs
                     |> List.distinct
                     |> FileSystem.getAllFiles
+                    |> (@) excludeFiles
                     |> List.map Path.GetFileName
                     |> List.distinct
 

@@ -9,3 +9,4 @@
 - Automatically exclude a target directory
 - Add `force` option
 - Allow multiple sources
+- Allow to exclude images from a file

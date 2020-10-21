@@ -1,5 +1,6 @@
 namespace MF.ImageManager.Command
 
+open System.IO
 open MF.ConsoleApplication
 open MF.ImageManager
 
@@ -12,6 +13,7 @@ module PrepareCommand =
     let options = [
         Option.requiredArray "source" (Some "s") "Directory you want to search files." (Some [])
         Option.requiredArray "exclude" (Some "e") "Directories you want to exclude from searching." None
+        Option.required "exclude-list" (Some "x") "Text file contains a list of files you want to exclude from searching (<c:yellow>one file at line</c>)." None
         Option.noValue "force" (Some "f") "If set, target directory will NOT be excluded, and images may be overwritten."
     ]
 
@@ -19,9 +21,11 @@ module PrepareCommand =
         let source = input |> Input.getOptionValueAsList "source"
         let target = input |> Input.getArgumentValue "target"
         let exclude = input |> Input.getOptionValueAsList "exclude"
+        let excludeList = input |> Input.getOptionValueAsString "exclude-list"
 
         if output.IsVerbose() then
-            output.Table ["Source"; "Target"; "Exclude"] [[source; [target]; exclude] |> List.map (sprintf "%A")]
+            output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"]
+                [[source; [target]; exclude; excludeList |> Option.toList] |> List.map (sprintf "%A")]
 
         output.Section (
             sprintf "Prepare to %s from:\n - %s"
@@ -40,6 +44,13 @@ module PrepareCommand =
                 match exclude with
                 | [] -> None
                 | excludeDirs -> Some excludeDirs
+            ExcludeList =
+                match excludeList with
+                | None -> None
+                | Some excludeList ->
+                    if excludeList |> File.Exists |> not then
+                        failwithf "File %A you want to exclude from, does not exists." excludeList
+                    Some excludeList
         }
         |> Prepare.prepareForSorting output
         |> function
