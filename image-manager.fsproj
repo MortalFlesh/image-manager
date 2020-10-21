@@ -10,6 +10,10 @@
   <ItemGroup>
     <Compile Include="src/Utils.fs" />
     <Compile Include="src/Prepare.fs" />
+
+    <!-- Commands -->
+    <Compile Include="src/Command/PrepareImages.fs" />
+
     <Compile Include="src/Program.fs" />
   </ItemGroup>
 
