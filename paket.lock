@@ -21,6 +21,9 @@ NUGET
       FSharp.Core (>= 4.7)
       ShellProgressBar (>= 4.3)
     FSharp.Core (4.7.2)
+    MetadataExtractor (2.4.3)
+      System.Text.Encoding.CodePages (>= 4.5.1)
+      XmpCore (>= 6.1.10)
     MF.ConsoleApplication (2.0)
       ConsoleStyle (>= 2.0)
       FSharp.Core (>= 4.7)
@@ -182,6 +185,7 @@ NUGET
       Microsoft.NETCore.Platforms (>= 1.1)
       Microsoft.NETCore.Targets (>= 1.1)
       System.Runtime (>= 4.3)
+    XmpCore (6.1.10)
 
 GROUP Build
 STORAGE: NONE

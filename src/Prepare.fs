@@ -1,14 +1,24 @@
 namespace MF.ImageManager
 
+open System
+
 type TargetDirMode =
     | Override
     | Exclude
     | DryRun
 
+type TargetSubdir =
+    | Flat
+    | ByMonth
+    | ByYear
+    | ByYearAndMonth
+
 type PrepareForSorting = {
     Source: string list
     Target: string
+    TargetSubdirFallback: string option
     TargetDirMode: TargetDirMode
+    TargetSubdir: TargetSubdir
     Exclude: string list option
     ExcludeList: string option
 }
@@ -16,6 +26,7 @@ type PrepareForSorting = {
 type Image = {
     Name: string
     FullPath: string
+    CreatedAt: DateTime option
 }
 
 [<RequireQualifiedAccess>]
@@ -24,6 +35,8 @@ module Image =
 
 module Prepare =
     open System.IO
+    open System.Collections.Generic
+    open MetadataExtractor
     open MF.ConsoleApplication
     open MF.Utils
 
@@ -31,34 +44,62 @@ module Prepare =
         | File of string
         | Dir of string
 
-    let private notIn excludedFiles (image: Image) =
+    let private notIn excludedFiles item =
         excludedFiles
-        |> List.contains image.Name
+        |> List.contains item
         |> not
 
-    let private findAllImages dir =
+    let private notEndsBy (excludedFiles: string list) (item: string) =
+        excludedFiles
+        |> List.exists item.EndsWith
+        |> not
+
+    let rec private tryFind (dir, tag) (attr: IReadOnlyList<Directory>) =
+        attr
+        |> Seq.tryFind (fun d -> d.Name = dir)
+        |> Option.bind (fun dir ->
+            dir.Tags
+            |> Seq.tryFind (fun t -> t.HasName && t.Name = tag)
+        )
+
+    let private findAllImages output dir =
         let ignored = [".DS_Store"]
 
         [ dir ]
         |> FileSystem.getAllFiles
-        |> List.map (fun file ->
-            {
-                Name = file |> Path.GetFileName
-                FullPath = file |> Path.GetFullPath
-            }
+        |> List.filter (notEndsBy ignored)
+        |> List.choose (fun file ->
+            try
+                let dateTimeOriginal =
+                    file
+                    |> ImageMetadataReader.ReadMetadata
+                    |> tryFind ("Exif SubIFD", "Date/Time Original")
+                    |> Option.bind (fun t -> t.Description |> DateTime.parseExifDateTime)
+
+                Some {
+                    Name = file |> Path.GetFileName
+                    FullPath = file |> Path.GetFullPath
+                    CreatedAt = dateTimeOriginal
+                }
+            with e ->
+                output.Error <| sprintf "File %s could not be parsed due to %A." file e.Message
+                if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
+                None
         )
-        |> List.filter (notIn ignored)
 
     let prepareForSorting output prepare =
         Directory.CreateDirectory(prepare.Target) |> ignore
 
+        output.NewLine()
         output.SubTitle "Find all images in source"
         let allImagesInSource =
             prepare.Source
             |> List.distinct
-            |> List.collect findAllImages
+            |> List.collect (findAllImages output)
             |> List.distinct
-        output.Message <| sprintf "Found %i images" (allImagesInSource |> Seq.length)
+
+        output.Message <| sprintf " -> Found %i images" (allImagesInSource |> Seq.length)
+        |> output.NewLine
 
         output.SubTitle "Exclude images from source by excluded dirs"
         let excludeDirs =
@@ -103,40 +144,74 @@ module Prepare =
                 if output.IsVeryVerbose() then
                     output.List excludedFiles
 
-                output.Message <| sprintf "Exclude %i images" (excludedFiles |> List.length)
+                output.Message <| sprintf " -> Exclude %i images" (excludedFiles |> List.length)
 
                 let result =
                     allImagesInSource
-                    |> List.filter (notIn excludedFiles)
+                    |> List.filter (Image.name >> notIn excludedFiles)
 
-                output.Message <| sprintf "Filtered %i images" (result |> List.length)
+                output.Message <| sprintf " -> Filtered %i images" (result |> List.length)
                 result
             | None -> allImagesInSource
 
         if output.IsVeryVerbose() then
-            output.Message "All images:"
+            output.Message " * All images:"
             output.List (allImagesInSource |> List.map Image.name)
 
-            output.Message "Files to copy:"
+            output.Message " * Files to copy:"
             output.List (filesToCopy |> List.map Image.name)
 
+        output.Message " -> Done"
+        |> output.NewLine
+
         let progress =
-            filesToCopy
-            |> List.length
-            |> tee (sprintf "Copy images to target (%i)" >> output.SubTitle)
-            |> output.ProgressStart ""
+            let totalCount =
+                filesToCopy
+                |> List.length
+                |> tee (sprintf "Copy images to target (%i)" >> output.SubTitle)
+
+            match prepare.TargetDirMode with
+            | DryRun -> None
+            | _ ->
+                totalCount
+                |> output.ProgressStart "\n"
+                |> Some
+
+        let targetPath (image: Image) =
+            let (/) (a: obj) (b: obj) = Path.Combine(string a, string b)
+            let month = sprintf "%02i"
+
+            match prepare, image with
+            | { TargetSubdirFallback = None }, { CreatedAt = None }
+            | { TargetSubdir = Flat }, _ -> prepare.Target / image.Name
+
+            | { TargetSubdir = ByMonth; TargetSubdirFallback = Some fallback }, { CreatedAt = None }
+            | { TargetSubdir = ByYear; TargetSubdirFallback = Some fallback }, { CreatedAt = None }
+            | { TargetSubdir = ByYearAndMonth; TargetSubdirFallback = Some fallback }, { CreatedAt = None } -> prepare.Target / fallback / image.Name
+
+            | { TargetSubdir = ByMonth }, { CreatedAt = Some createdAt } -> prepare.Target / (month createdAt.Month) / image.Name
+            | { TargetSubdir = ByYear }, { CreatedAt = Some createdAt } -> prepare.Target / createdAt.Year / image.Name
+            | { TargetSubdir = ByYearAndMonth }, { CreatedAt = Some createdAt } -> prepare.Target / createdAt.Year / (month createdAt.Month) / image.Name
 
         filesToCopy
         |> List.iter (fun image ->
+            let targetPath = image |> targetPath
+
             match prepare.TargetDirMode with
             | DryRun ->
-                output.Message <| sprintf " * <c:cyan>%s</c> -> <c:green>%s</c>" image.FullPath (Path.Combine(prepare.Target, image.Name))
+                output.Message <| sprintf " * <c:cyan>%s</c> -> <c:green>%s</c>" image.FullPath targetPath
             | _ ->
-                (image.FullPath, Path.Combine(prepare.Target, image.Name))
+                targetPath
+                |> Path.GetDirectoryName
+                |> Directory.ensure
+
+                (image.FullPath, targetPath)
                 |> FileSystem.copy
 
-            progress |> output.ProgressAdvance
+                progress |> Option.iter output.ProgressAdvance
         )
-        progress |> output.ProgressFinish
+        progress |> Option.iter output.ProgressFinish
+
+        output.NewLine()
 
         Ok "Done"
