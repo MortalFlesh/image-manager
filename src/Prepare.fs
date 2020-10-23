@@ -86,6 +86,7 @@ module Prepare =
     open System.IO
     open System.Collections.Generic
     open MetadataExtractor
+    open ErrorHandling
     open MF.ConsoleApplication
     open MF.Utils
 
@@ -114,27 +115,32 @@ module Prepare =
     let private findAllImages output dir =
         let ignored = [".DS_Store"]
 
-        [ dir ]
-        |> FileSystem.getAllFiles
-        |> List.filter (notEndsBy ignored)
-        |> List.choose (fun file ->
-            try
-                let dateTimeOriginal =
+        let allFiles =
+            [ dir ]
+            |> FileSystem.getAllFiles
+            |> List.filter (notEndsBy ignored)
+
+        allFiles
+        |> List.map (fun file -> async {
+            let dateTimeOriginal =
+                try
                     file
                     |> ImageMetadataReader.ReadMetadata
                     |> tryFind ("Exif SubIFD", "Date/Time Original")
                     |> Option.bind (fun t -> t.Description |> DateTime.parseExifDateTime)
+                with e ->
+                    output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
+                    if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
+                    None
 
-                Some {
-                    Name = file |> Path.GetFileName
-                    FullPath = file |> Path.GetFullPath
-                    CreatedAt = dateTimeOriginal
-                }
-            with e ->
-                output.Error <| sprintf "File %s could not be parsed due to %A." file e.Message
-                if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
-                None
-        )
+            return {
+                Name = file |> Path.GetFileName
+                FullPath = file |> Path.GetFullPath
+                CreatedAt = dateTimeOriginal
+            }
+        })
+        |> Async.Parallel
+        |> Async.map (Seq.toList)
 
     let prepareForSorting output prepare =
         Directory.CreateDirectory(prepare.Target) |> ignore
@@ -144,8 +150,12 @@ module Prepare =
         let allImagesInSource =
             prepare.Source
             |> List.distinct
-            |> List.collect (findAllImages output)
-            |> List.distinctBy Image.name
+            |> List.map (findAllImages output)
+            |> Async.Parallel
+            |> Async.RunSynchronously
+            |> Seq.concat
+            |> Seq.distinctBy Image.name
+            |> Seq.toList
 
         output.Message <| sprintf " -> Found %i images" (allImagesInSource |> Seq.length)
         |> output.NewLine
@@ -169,39 +179,46 @@ module Prepare =
                 let excludeFiles, excludeDirs =
                     excludeList
                     |> File.ReadAllLines
-                    |> Seq.fold (fun (excludeFiles, excludeDirs) f ->
-                        let attr = f |> File.GetAttributes
+                    |> Seq.fold (fun (excludeFiles, excludeDirs) line ->
+                        if line |> File.Exists || line |> Directory.Exists
+                            then
+                                let attr = line |> File.GetAttributes
 
-                        if attr.HasFlag(FileAttributes.Directory) then excludeFiles, f :: excludeDirs
-                        else f :: excludeFiles, excludeDirs
+                                if attr.HasFlag(FileAttributes.Directory)
+                                    then excludeFiles, line :: excludeDirs
+                                    else line :: excludeFiles, excludeDirs
+                            else
+                                line :: excludeFiles, excludeDirs
                     ) ([], excludeDirs)
 
                 excludeFiles, (if excludeDirs |> List.isEmpty then None else Some excludeDirs)
             | None -> [], excludeDirs
 
         let filesToCopy =
-            match excludeDirs with
-            | Some excludeDirs ->
-                let excludedFiles =
+            let excludedFiles =
+                match excludeDirs with
+                | Some excludeDirs ->
                     excludeDirs
+                    |> tee (List.singleton >> output.Options "Exclude dirs")
                     |> List.distinct
                     |> FileSystem.getAllFiles
-                    |> (@) excludeFiles
                     |> List.map Path.GetFileName
-                    |> List.distinct
+                    |> (@) excludeFiles
+                | None ->
+                    excludeFiles
+                |> List.distinct
 
-                if output.IsVeryVerbose() then
-                    output.List excludedFiles
+            if output.IsVeryVerbose() then
+                output.List excludedFiles
 
-                output.Message <| sprintf " -> Exclude %i images" (excludedFiles |> List.length)
+            output.Message <| sprintf " -> Exclude %i images" (excludedFiles |> List.length)
 
-                let result =
-                    allImagesInSource
-                    |> List.filter (Image.name >> notIn excludedFiles)
+            let result =
+                allImagesInSource
+                |> List.filter (Image.name >> notIn excludedFiles)
 
-                output.Message <| sprintf " -> Filtered %i images" (result |> List.length)
-                result
-            | None -> allImagesInSource
+            output.Message <| sprintf " -> Filtered %i images" (result |> List.length)
+            result
 
         if output.IsVeryVerbose() then
             output.Message " * All images:"

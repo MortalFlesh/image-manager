@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="src/ErrorHandling/Result.fs" />
+    <Compile Include="src/ErrorHandling/Option.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="src/Utils.fs" />
     <Compile Include="src/Prepare.fs" />
 

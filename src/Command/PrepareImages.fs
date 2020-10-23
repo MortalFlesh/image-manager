@@ -36,6 +36,47 @@ module PrepareCommand =
                 input |> Input.getOptionValueAsString "exclude-list"
             | _ -> None
 
+        let config =
+            let targetDirMode =
+                match input with
+                | Input.IsSetOption "force" _ -> Override
+                | Input.IsSetOption "dry-run" _ -> DryRun
+                | _ -> Exclude
+
+            match input with
+            | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
+                config
+                |> File.ReadAllText
+                |> PrepareForSorting.parse targetDirMode
+                |> Some
+            | _ -> None
+            |> PrepareForSorting.combine {
+                Source = source
+                Target = target
+                TargetDirMode = targetDirMode
+                TargetSubdir =
+                    match input, input with
+                    | Input.IsSetOption "year" _, Input.IsSetOption "month" _ -> ByYearAndMonth
+                    | Input.IsSetOption "year" _, _ -> ByYear
+                    | Input.IsSetOption "month" _, _ -> ByMonth
+                    | _ -> Flat
+                TargetSubdirFallback =
+                    match input with
+                    | Input.HasOption "fallback" fallback -> fallback |> OptionValue.stringValue
+                    | _ -> None
+                Exclude =
+                    match exclude with
+                    | [] -> None
+                    | excludeDirs -> Some excludeDirs
+                ExcludeList =
+                    match excludeList with
+                    | None -> None
+                    | Some excludeList ->
+                        if excludeList |> File.Exists |> not then
+                            failwithf "File %A you want to exclude from, does not exists." excludeList
+                        Some excludeList
+            }
+
         if output.IsVerbose() then
             output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"]
                 [[source; [target]; exclude; excludeList |> Option.toList] |> List.map (sprintf "%A")]
@@ -43,45 +84,7 @@ module PrepareCommand =
         output.Section <| sprintf "Prepare images to %s" target
         output.Message <| sprintf "From:\n - %s" (source |> String.concat "\n - ")
 
-        let targetDirMode =
-            match input with
-            | Input.IsSetOption "force" _ -> Override
-            | Input.IsSetOption "dry-run" _ -> DryRun
-            | _ -> Exclude
-
-        match input with
-        | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
-            config
-            |> File.ReadAllText
-            |> PrepareForSorting.parse targetDirMode
-            |> Some
-        | _ -> None
-        |> PrepareForSorting.combine {
-            Source = source
-            Target = target
-            TargetDirMode = targetDirMode
-            TargetSubdir =
-                match input, input with
-                | Input.IsSetOption "year" _, Input.IsSetOption "month" _ -> ByYearAndMonth
-                | Input.IsSetOption "year" _, _ -> ByYear
-                | Input.IsSetOption "month" _, _ -> ByMonth
-                | _ -> Flat
-            TargetSubdirFallback =
-                match input with
-                | Input.HasOption "fallback" fallback -> fallback |> OptionValue.stringValue
-                | _ -> None
-            Exclude =
-                match exclude with
-                | [] -> None
-                | excludeDirs -> Some excludeDirs
-            ExcludeList =
-                match excludeList with
-                | None -> None
-                | Some excludeList ->
-                    if excludeList |> File.Exists |> not then
-                        failwithf "File %A you want to exclude from, does not exists." excludeList
-                    Some excludeList
-        }
+        config
         |> Prepare.prepareForSorting output
         |> function
             | Ok message ->
