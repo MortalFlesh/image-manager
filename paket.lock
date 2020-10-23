@@ -21,6 +21,8 @@ NUGET
       FSharp.Core (>= 4.7)
       ShellProgressBar (>= 4.3)
     FSharp.Core (4.7.2)
+    FSharp.Data (3.3.3)
+      FSharp.Core (>= 4.3.4)
     MetadataExtractor (2.4.3)
       System.Text.Encoding.CodePages (>= 4.5.1)
       XmpCore (>= 6.1.10)

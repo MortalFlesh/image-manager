@@ -23,6 +23,55 @@ type PrepareForSorting = {
     ExcludeList: string option
 }
 
+[<RequireQualifiedAccess>]
+module PrepareForSorting =
+    open FSharp.Data
+
+    type private Config = JsonProvider<"src/schema/config.json", SampleIsList = true>
+
+    let parse targetDirMode config =
+        let config = Config.Parse config
+
+        {
+            Target = ""
+            Source = config.Source |> Seq.toList
+            TargetSubdirFallback = config.Fallback
+            TargetDirMode = targetDirMode
+            TargetSubdir =
+                match config.TargetSubdir with
+                | Some "year-month" -> ByYearAndMonth
+                | Some "year" -> ByYear
+                | Some "month" -> ByMonth
+                | _ -> Flat
+            Exclude =
+                match config.Exclude |> Seq.toList with
+                | [] -> None
+                | exclude -> Some exclude
+            ExcludeList = config.ExcludeList
+        }
+
+    let combine config defaults =
+        match defaults with
+        | Some defaults ->
+            { defaults with
+                Target = config.Target
+                Source = config.Source @ defaults.Source |> List.distinct
+                TargetSubdirFallback =
+                    match config.TargetSubdirFallback with
+                    | Some targetSubdirFallback -> Some targetSubdirFallback
+                    | _ -> defaults.TargetSubdirFallback
+                Exclude =
+                    match config.Exclude with
+                    | None
+                    | Some [] -> defaults.Exclude
+                    | exclude -> exclude
+                ExcludeList =
+                    match config.ExcludeList with
+                    | Some excludeList -> Some excludeList
+                    | _ -> defaults.ExcludeList
+            }
+        | _ -> config
+
 type Image = {
     Name: string
     FullPath: string
@@ -96,7 +145,7 @@ module Prepare =
             prepare.Source
             |> List.distinct
             |> List.collect (findAllImages output)
-            |> List.distinct
+            |> List.distinctBy Image.name
 
         output.Message <| sprintf " -> Found %i images" (allImagesInSource |> Seq.length)
         |> output.NewLine

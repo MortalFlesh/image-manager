@@ -19,6 +19,7 @@ module PrepareCommand =
         Option.noValue "year" None "If set, target directory will have a sub-directory with year of the image created date."
         Option.noValue "month" None "If set, target directory will have a sub-directory with month of the image created date."
         Option.optional "fallback" None "If set, it will be used as a sub-directory in target directory for all files, which don't have other specific sub-directory." None
+        Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
     ]
 
     let execute ((input, output): IO) =
@@ -42,14 +43,23 @@ module PrepareCommand =
         output.Section <| sprintf "Prepare images to %s" target
         output.Message <| sprintf "From:\n - %s" (source |> String.concat "\n - ")
 
-        {
+        let targetDirMode =
+            match input with
+            | Input.IsSetOption "force" _ -> Override
+            | Input.IsSetOption "dry-run" _ -> DryRun
+            | _ -> Exclude
+
+        match input with
+        | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
+            config
+            |> File.ReadAllText
+            |> PrepareForSorting.parse targetDirMode
+            |> Some
+        | _ -> None
+        |> PrepareForSorting.combine {
             Source = source
             Target = target
-            TargetDirMode =
-                match input with
-                | Input.IsSetOption "force" _ -> Override
-                | Input.IsSetOption "dry-run" _ -> DryRun
-                | _ -> Exclude
+            TargetDirMode = targetDirMode
             TargetSubdir =
                 match input, input with
                 | Input.IsSetOption "year" _, Input.IsSetOption "month" _ -> ByYearAndMonth
