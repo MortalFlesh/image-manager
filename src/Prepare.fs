@@ -21,6 +21,7 @@ type PrepareForSorting = {
     TargetSubdir: TargetSubdir
     Exclude: string list option
     ExcludeList: string option
+    FfmpegPath: string option
 }
 
 [<RequireQualifiedAccess>]
@@ -48,6 +49,7 @@ module PrepareForSorting =
                 | [] -> None
                 | exclude -> Some exclude
             ExcludeList = config.ExcludeList
+            FfmpegPath = config.Ffmpeg
         }
 
     let combine config defaults =
@@ -104,15 +106,7 @@ module Prepare =
         |> List.exists item.EndsWith
         |> not
 
-    let rec private tryFind (dir, tag) (attr: IReadOnlyList<Directory>) =
-        attr
-        |> Seq.tryFind (fun d -> d.Name = dir)
-        |> Option.bind (fun dir ->
-            dir.Tags
-            |> Seq.tryFind (fun t -> t.HasName && t.Name = tag)
-        )
-
-    let private findAllImages output dir =
+    let private findAllImages output ffmpegPath dir =
         let ignored = [".DS_Store"]
 
         let allFiles =
@@ -122,16 +116,9 @@ module Prepare =
 
         allFiles
         |> List.map (fun file -> async {
-            let dateTimeOriginal =
-                try
-                    file
-                    |> ImageMetadataReader.ReadMetadata
-                    |> tryFind ("Exif SubIFD", "Date/Time Original")
-                    |> Option.bind (fun t -> t.Description |> DateTime.parseExifDateTime)
-                with e ->
-                    output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
-                    if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
-                    None
+            let! dateTimeOriginal =
+                file
+                |> MetaData.dateTimeOriginal output ffmpegPath
 
             return {
                 Name = file |> Path.GetFileName
@@ -150,7 +137,7 @@ module Prepare =
         let allImagesInSource =
             prepare.Source
             |> List.distinct
-            |> List.map (findAllImages output)
+            |> List.map (findAllImages output prepare.FfmpegPath)
             |> Async.Parallel
             |> Async.RunSynchronously
             |> Seq.concat

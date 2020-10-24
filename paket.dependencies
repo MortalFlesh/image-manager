@@ -6,6 +6,8 @@ nuget FSharp.Core ~> 4.7
 nuget FSharp.Data ~> 3.0
 nuget MF.ConsoleApplication ~> 2.0
 nuget MetadataExtractor ~> 2.4
+nuget MediaToolkit
+nuget MediaToolkit.NetCore
 
 // [ FAKE GROUP ]
 group Build

@@ -75,6 +75,7 @@ module PrepareCommand =
                         if excludeList |> File.Exists |> not then
                             failwithf "File %A you want to exclude from, does not exists." excludeList
                         Some excludeList
+                FfmpegPath = None   // todo - for now, it is only possible to set it by config file
             }
 
         if output.IsVerbose() then

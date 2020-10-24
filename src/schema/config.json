@@ -15,6 +15,7 @@
             "one"
         ],
         "exclude-list": "exclude.txt",
-        "fallback": "fallback"
+        "fallback": "fallback",
+        "ffmpeg": "path/"
     }
 ]

@@ -13,7 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    
+
     <Compile Include="src/Utils.fs" />
+    <Compile Include="src/MetaData.fs" />
     <Compile Include="src/Prepare.fs" />
 
     <!-- Commands -->
