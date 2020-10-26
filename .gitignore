@@ -26,3 +26,5 @@ tools/
 
 # Console
 !bin/console
+AssemblyInfo.fs
+dist/

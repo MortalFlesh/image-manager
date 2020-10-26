@@ -1,9 +1,13 @@
-framework: netcoreapp3.0
+framework: net5.0
 storage: none
 
 source https://api.nuget.org/v3/index.json
-nuget FSharp.Core
-nuget MF.ConsoleApplication ~> 1.0
+nuget FSharp.Core ~> 4.7
+nuget FSharp.Data ~> 3.0
+nuget MF.ConsoleApplication ~> 2.0
+nuget MetadataExtractor ~> 2.4
+nuget MediaToolkit
+nuget MediaToolkit.NetCore
 
 // [ FAKE GROUP ]
 group Build
@@ -11,5 +15,8 @@ group Build
     source https://api.nuget.org/v3/index.json
     nuget Fake.DotNet.Cli
     nuget Fake.IO.FileSystem
+    nuget Fake.IO.Zip
     nuget Fake.Core.Target
-    nuget Fake.Core.UserInput
+    nuget Fake.DotNet.AssemblyInfoFile
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Tools.Git
