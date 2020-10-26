@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <PackageId>MF.ImageManager</PackageId>
     <Version>0.0.0</Version>
@@ -8,13 +8,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="src/ErrorHandling/Result.fs" />
     <Compile Include="src/ErrorHandling/Option.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    
-
     <Compile Include="src/Utils.fs" />
     <Compile Include="src/MetaData.fs" />
     <Compile Include="src/Prepare.fs" />

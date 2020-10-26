@@ -13,3 +13,4 @@
 - Allow to dry-run the preparation
 - Allow to create a target subdirs by image created year/month
 - Allow config file
+- Update to dotnet core 5.0
