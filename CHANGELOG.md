@@ -3,7 +3,7 @@
 <!-- There is always Unreleased section on the top. Subsections (Add, Changed, Fix, Removed) should be Add as needed. -->
 ## Unreleased
 
-## 0.0.0 -
+## 1.0.0 - 2020-10-26
 - Initial implementation
 - Use paket, FAKE and update to dotnet core 3.0
 - Automatically exclude a target directory
@@ -14,3 +14,4 @@
 - Allow to create a target subdirs by image created year/month
 - Allow config file
 - Update to dotnet core 5.0
+- Use F# 5.0

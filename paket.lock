@@ -20,7 +20,7 @@ NUGET
       Colorful.Console (>= 1.2.10)
       FSharp.Core (>= 4.7)
       ShellProgressBar (>= 4.3)
-    FSharp.Core (4.7.2)
+    FSharp.Core (5.0)
     FSharp.Data (3.3.3)
       FSharp.Core (>= 4.3.4)
     MedallionShell (1.6.1)
