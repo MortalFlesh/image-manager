@@ -9,6 +9,9 @@ module MetaData =
     open MF.ConsoleApplication
     open MF.Utils
 
+    let private hasExtension extensions (path: string) =
+        extensions |> List.exists ((=) ((path |> Path.GetExtension).ToLower()))
+
     [<RequireQualifiedAccess>]
     module private DateTimeOriginal =
         open MetadataExtractor
@@ -21,59 +24,63 @@ module MetaData =
                 |> Seq.tryFind (fun t -> t.HasName && t.Name = tag)
             )
 
-        let forImage output (file: string) =
-            try
-                file
-                |> ImageMetadataReader.ReadMetadata
-                |> tryFind ("Exif SubIFD", "Date/Time Original")
-                |> Option.bind (fun t -> t.Description |> DateTime.parseExifDateTime)
-            with e ->
-                output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
-                if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
-                None
+        let forImage output: string -> _ = function
+            | notImage when notImage |> hasExtension [ ".jpg"; ".png"; ".jpeg" ] |> not -> None
+            | file ->
+                try
+                    file
+                    |> ImageMetadataReader.ReadMetadata
+                    |> tryFind ("Exif SubIFD", "Date/Time Original")
+                    |> Option.bind (fun t -> t.Description |> DateTime.parseExifDateTime)
+                with e ->
+                    output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
+                    if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
+                    None
 
         open MediaToolkit.Services
         open MediaToolkit.Tasks
 
-        let forVideo output ffmpegPath path = async {
-            try
-                let cwd = Directory.GetCurrentDirectory()
-                let (/) a b = Path.Combine(a, b)
+        let forVideo output ffmpegPath: string -> _ = function
+            | notVideo when notVideo |> hasExtension [ ".mp4"; ".mov" ] |> not -> None |> Async.retn
+            | path -> async {
+                try
+                    let cwd = Directory.GetCurrentDirectory()
+                    let (/) a b = Path.Combine(a, b)
 
-                // win only
-                let ffmpeg =
-                    match ffmpegPath with
-                    | Some path -> cwd / path / "ffmpeg.exe"
-                    | _ -> cwd / "ffmpeg.exe"
+                    // win only
+                    let ffmpeg =
+                        match ffmpegPath with
+                        | Some path -> cwd / path / "ffmpeg.exe"
+                        | _ -> cwd / "ffmpeg.exe"
 
-                let ffmpegFullpath = ffmpeg |> Path.GetFullPath
+                    let ffmpegFullpath = ffmpeg |> Path.GetFullPath
 
-                if output.IsVeryVerbose() then
-                    output.Message <| sprintf "ffmpeg: %s (%s)" ffmpeg ffmpegFullpath
+                    if output.IsVeryVerbose() then
+                        output.Message <| sprintf "ffmpeg: %s (%s)" ffmpeg ffmpegFullpath
 
-                if ffmpeg |> File.Exists |> not then failwithf "ffmpeg does not exists at %s" ffmpegFullpath
+                    if ffmpeg |> File.Exists |> not then failwithf "ffmpeg does not exists at %s" ffmpegFullpath
 
-                let service = MediaToolkitService.CreateInstance(ffmpegFullpath)
+                    let service = MediaToolkitService.CreateInstance(ffmpegFullpath)
 
-                let! result =
-                    service.ExecuteAsync(path |> FfTaskGetMetadata)
-                    |> Async.AwaitTask
+                    let! result =
+                        service.ExecuteAsync(path |> FfTaskGetMetadata)
+                        |> Async.AwaitTask
 
-                let meta = result.Metadata
+                    let meta = result.Metadata
 
-                match meta.Format.Tags.TryGetValue("creation_time") with
-                | true, createdAt ->
-                    return
-                        match createdAt |> DateTime.TryParse with
-                        | true, createdAtDateTime -> Some createdAtDateTime
-                        | _ -> None
+                    match meta.Format.Tags.TryGetValue("creation_time") with
+                    | true, createdAt ->
+                        return
+                            match createdAt |> DateTime.TryParse with
+                            | true, createdAtDateTime -> Some createdAtDateTime
+                            | _ -> None
 
-                | _ -> return None
-            with e ->
-                output.Error <| sprintf "[Warning] Video metadata for %s could not be get due to: %s" path e.Message
-                if output.IsVerbose() then output.Error <| sprintf "%A" e
-                return None
-        }
+                    | _ -> return None
+                with e ->
+                    output.Error <| sprintf "[Warning] Video metadata for %s could not be get due to: %s" path e.Message
+                    if output.IsVerbose() then output.Error <| sprintf "%A" e
+                    return None
+            }
 
     let dateTimeOriginal output ffmpegPath file: Async<DateTime option> = async {
         let dateTimeOriginal = file |> DateTimeOriginal.forImage output
