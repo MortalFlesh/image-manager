@@ -14,12 +14,18 @@
   <ItemGroup>
     <Compile Include="src/ErrorHandling/Result.fs" />
     <Compile Include="src/ErrorHandling/Option.fs" />
+
+    <Compile Include="src/Utils.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="src/Utils.fs" />
-    <Compile Include="src/MetaData.fs" />
-    <Compile Include="src/Prepare.fs" />
+    <Compile Include="src/Prepare/Domain.fs" />
+    <Compile Include="src/Prepare/Config.fs" />
+    <Compile Include="src/Prepare/MetaData.fs" />
+    <Compile Include="src/Prepare/Prepare.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
 
     <!-- Commands -->
     <Compile Include="src/Command/PrepareImages.fs" />

@@ -1,4 +1,4 @@
-namespace ErrorHandling
+namespace MF.ErrorHandling
 
 [<RequireQualifiedAccess>]
 module Option =

@@ -5,6 +5,7 @@
 - Update dependencies
 - Use .net 6.0
 - Use .net 7.0
+- Add prefix option
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation
