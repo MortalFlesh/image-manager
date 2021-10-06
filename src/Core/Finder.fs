@@ -6,6 +6,7 @@ module Finder =
     open System.IO
     open MF.ConsoleApplication
     open MF.Utils
+    open MF.Utils.Progress
     open MF.ErrorHandling
 
     let createImage output ignoreWarnings ffmpeg prefix file = asyncResult {
@@ -38,19 +39,21 @@ module Finder =
             |> FileSystem.getAllFilesAsync output FileSystem.SearchFiles.IgnoreDotFiles
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
 
-        let progress = output.ProgressStart "Check metadata" files.Length
+        use progress = new Progress(output, "Check metadata")
+        progress.Start(files.Length)
 
         let createImages =
             files
             |> tee (List.length >> sprintf "  ├──> found <c:magenta>%i</c> files, <c:yellow>parallely checking metadata ...</c>" >> output.Message)
-            |> List.map (createImage output ignoreWarnings ffmpeg prefix >> AsyncResult.tee (fun _ -> progress |> output.ProgressAdvance))
+            |> List.map (
+                createImage output ignoreWarnings ffmpeg prefix
+                >> AsyncResult.tee (ignore >> progress.Advance)
+            )
 
         let! images =
             createImages
             |> AsyncResult.ofParallelAsyncResults PrepareError.Exception
             |> AsyncResult.tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> images with metadata" >> output.Message)
-
-        progress |> output.ProgressFinish
 
         return images
     }

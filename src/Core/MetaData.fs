@@ -26,6 +26,7 @@ module MetaData =
             try
                 let meta = file |> ImageMetadataReader.ReadMetadata
 
+                //! print metadata, if needed
                 (* meta
                 |> Seq.iter (fun dir ->
                     output.Message $"dir: {dir.Name}"
@@ -162,6 +163,10 @@ module MetaData =
             |> Meta.forImage output ignoreWarnings [
                 "Exif SubIFD", "Date/Time Original"
                 "Exif IFD0", "Model"
+
+                "GPS", "GPS Latitude"
+                "GPS", "GPS Longitude"
+                "GPS", "GPS Altitude"
             ]
 
         let dateTimeOriginal =

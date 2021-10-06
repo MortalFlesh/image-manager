@@ -46,6 +46,16 @@ let main argv =
             Execute = Command.RenameImageByMeta.execute
         }
 
+        command "image:find:same" {
+            Description = "Find same images by different size, etc."
+            Help = None
+            Arguments = Command.FindSameImages.arguments
+            Options = Command.FindSameImages.options
+            Initialize = None
+            Interact = None
+            Execute = Command.FindSameImages.execute
+        }
+
         (* command "test" {
             Description = "Tests a console output"
             Help = None

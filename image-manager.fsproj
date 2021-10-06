@@ -39,6 +39,7 @@
     <Compile Include="src/Command/PrepareImages.fs" />
     <Compile Include="src/Command/MetaStats.fs" />
     <Compile Include="src/Command/RenameImageByMeta.fs" />
+    <Compile Include="src/Command/FindSameImages.fs" />
 
     <Compile Include="src/Program.fs" />
   </ItemGroup>
