@@ -105,3 +105,40 @@ module File =
         excludedFiles
         |> List.exists item.EndsWith
         |> not
+
+module internal Progress =
+    open System
+    open MF.ConsoleApplication
+
+    type Progress (output: Output, name: string) =
+        let mutable progressBar: ProgressBar option = None
+
+        member __.Start(total: int) =
+            progressBar <- Some (output.ProgressStart name total)
+
+        member __.Advance() =
+            progressBar |> Option.iter output.ProgressAdvance
+
+        member __.Finish() =
+            progressBar |> Option.iter output.ProgressFinish
+            progressBar <- None
+
+        interface IDisposable with
+            member this.Dispose() =
+                this.Finish()
+
+[<RequireQualifiedAccess>]
+module Errors =
+    open System
+    open System.IO
+    open MF.ConsoleApplication
+
+    let show output (errors: string list) =
+        if errors.Length > 10 then
+            let now = DateTime.Now.ToString("dd-MM-yyyy--HH-mm")
+            let file = $"rename-error--{now}.log"
+            File.WriteAllLines(file, errors)
+            output.Error $"Errors {errors.Length} was saved to \"{file}\" file."
+        else
+            errors
+            |> List.iter output.Error

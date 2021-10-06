@@ -1,5 +1,7 @@
 namespace MF.ImageManager.Prepare
 
+open MF.ImageManager
+
 type Config = {
     Source: string list
     Prefix: Prefix option

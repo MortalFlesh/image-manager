@@ -1,4 +1,4 @@
-namespace MF.ImageManager.Prepare
+namespace MF.ImageManager
 
 open System
 open MF.Utils
@@ -25,6 +25,7 @@ type Image = {
     Name: string
     FullPath: string
     CreatedAt: DateTime option
+    Metadata: Map<string, string>
 }
 
 [<RequireQualifiedAccess>]

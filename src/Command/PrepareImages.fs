@@ -110,9 +110,11 @@ module PrepareCommand =
             output.Section <| sprintf "Prepare images to %s" config.Target
             output.Message <| sprintf "From:\n - %s" (config.Source |> String.concat "\n - ")
 
+            let ignoreWarnings = false
+
             return!
                 config
-                |> Prepare.prepareForSorting output
+                |> Prepare.prepareForSorting output ignoreWarnings
         }
         |> Async.RunSynchronously
         |> function

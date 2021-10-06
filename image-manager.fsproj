@@ -7,6 +7,10 @@
     <RepositoryUrl>https://github.com/MortalFlesh/image-manager</RepositoryUrl>
   </PropertyGroup>
 
+  <!-- <ItemGroup>
+    <ProjectReference Include="../console-style/console-style.fsproj" />
+  </ItemGroup> -->
+
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
   </ItemGroup>
@@ -19,9 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="src/Prepare/Domain.fs" />
+    <Compile Include="src/Core/Domain.fs" />
+    <Compile Include="src/Core/MetaData.fs" />
+    <Compile Include="src/Core/Finder.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="src/Prepare/Config.fs" />
-    <Compile Include="src/Prepare/MetaData.fs" />
     <Compile Include="src/Prepare/Prepare.fs" />
   </ItemGroup>
 
@@ -29,6 +37,8 @@
 
     <!-- Commands -->
     <Compile Include="src/Command/PrepareImages.fs" />
+    <Compile Include="src/Command/MetaStats.fs" />
+    <Compile Include="src/Command/RenameImageByMeta.fs" />
 
     <Compile Include="src/Program.fs" />
   </ItemGroup>
