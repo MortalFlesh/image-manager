@@ -7,6 +7,7 @@
 - Use .net 7.0
 - Add prefix option
 - Add rename command by image meta data
+- Use net6.0
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation
