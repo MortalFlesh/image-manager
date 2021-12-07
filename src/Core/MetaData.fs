@@ -3,7 +3,6 @@ namespace MF.ImageManager
 [<RequireQualifiedAccess>]
 module MetaData =
     open System
-    open System.IO
     open System.Collections.Generic
     open MF.ErrorHandling
     open MF.ConsoleApplication
@@ -171,14 +170,14 @@ module MetaData =
         return
             parsedMetadata
             |> List.choose (function
-                | MetaAttribute.createdAt, value ->
+                | MetaAttribute.KeyCreatedAt, value ->
                     value
                     |> DateTimeOriginal.parse output file
                     |> Option.map (fun createdAt -> CreatedAt, string createdAt)
-                | MetaAttribute.model, value -> Some (Model, value.Description)
-                | MetaAttribute.gpsLatitude, value -> Some (GpsLatitude, value.Description)
-                | MetaAttribute.gpsLongitude, value -> Some (GpsLongitude, value.Description)
-                | MetaAttribute.gpsAltitude, value -> Some (GpsAltitude, value.Description)
+                | MetaAttribute.KeyModel, value -> Some (Model, value.Description)
+                | MetaAttribute.KeyGpsLatitude, value -> Some (GpsLatitude, value.Description)
+                | MetaAttribute.KeyGpsLongitude, value -> Some (GpsLongitude, value.Description)
+                | MetaAttribute.KeyGpsAltitude, value -> Some (GpsAltitude, value.Description)
                 | _ -> None
             )
             |> Map.ofList

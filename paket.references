@@ -3,3 +3,4 @@ FSharp.Data
 MF.ConsoleApplication
 MetadataExtractor
 MediaToolkit.NetCore
+System.Drawing.Common

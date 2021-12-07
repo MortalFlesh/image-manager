@@ -8,6 +8,7 @@ nuget MF.ConsoleApplication ~> 5.0
 nuget MetadataExtractor ~> 2.4
 nuget MediaToolkit
 nuget MediaToolkit.NetCore
+nuget System.Drawing.Common ~> 6.0
 
 // [ FAKE GROUP ]
 group Build

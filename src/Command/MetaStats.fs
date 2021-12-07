@@ -1,11 +1,8 @@
 namespace MF.ImageManager.Command
 
-open System.IO
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
-open MF.ImageManager.Prepare
-open MF.Utils
 
 [<RequireQualifiedAccess>]
 module MetaStatsCommand =

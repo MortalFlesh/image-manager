@@ -8,6 +8,12 @@ type PrepareError =
     | Exception of exn
     | ErrorMessage of string
 
+[<RequireQualifiedAccess>]
+module PrepareError =
+    let format = function
+        | PrepareError.Exception e -> e.Message
+        | PrepareError.ErrorMessage e -> e
+
 type TargetDirMode =
     | Override
     | Exclude
@@ -18,6 +24,11 @@ type TargetSubdir =
     | ByMonth
     | ByYear
     | ByYearAndMonth
+
+type Cache =
+    | NoCache
+    | FromFile of string
+    | FreshAndCacheResultToFile of string
 
 type Prefix = Prefix of string
 
@@ -41,22 +52,23 @@ type Image = {
 
 [<RequireQualifiedAccess>]
 module MetaAttribute =
-    let [<Literal>] createdAt = "Date/Time Original"
-    let [<Literal>] model = "Model"
-    let [<Literal>] gpsLatitude = "GPS Latitude"
-    let [<Literal>] gpsLongitude = "GPS Longitude"
-    let [<Literal>] gpsAltitude = "GPS Altitude"
+    let [<Literal>] KeyCreatedAt = "Date/Time Original"
+    let [<Literal>] KeyModel = "Model"
+    let [<Literal>] KeyGpsLatitude = "GPS Latitude"
+    let [<Literal>] KeyGpsLongitude = "GPS Longitude"
+    let [<Literal>] KeyGpsAltitude = "GPS Altitude"
 
     let value = function
-        | CreatedAt -> createdAt
-        | Model -> model
-        | GpsLatitude -> gpsLatitude
-        | GpsLongitude -> gpsLongitude
-        | GpsAltitude -> gpsAltitude
+        | CreatedAt -> KeyCreatedAt
+        | Model -> KeyModel
+        | GpsLatitude -> KeyGpsLatitude
+        | GpsLongitude -> KeyGpsLongitude
+        | GpsAltitude -> KeyGpsAltitude
 
 [<RequireQualifiedAccess>]
 module Image =
     let name { Name = name } = name
+    let path { FullPath = path } = path
 
     let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
     let createdAtDateTime = createdAtRaw >> Option.map DateTime.Parse

@@ -26,6 +26,8 @@
     <Compile Include="src/Core/Domain.fs" />
     <Compile Include="src/Core/MetaData.fs" />
     <Compile Include="src/Core/Finder.fs" />
+    <Compile Include="src/Core/ImageComparator.fs" />
+    <Compile Include="src/Core/RecognizeSameImage.fs" />
   </ItemGroup>
 
   <ItemGroup>
