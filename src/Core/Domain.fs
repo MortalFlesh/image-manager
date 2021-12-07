@@ -21,16 +21,46 @@ type TargetSubdir =
 
 type Prefix = Prefix of string
 
+type MetaAttribute =
+    /// "Exif SubIFD" => "Date/Time Original"
+    | CreatedAt
+    /// "Exif IFD0" => "Model"
+    | Model
+    /// "GPS" => "GPS Latitude"
+    | GpsLatitude
+    /// "GPS" => "GPS Longitude"
+    | GpsLongitude
+    /// "GPS" => "GPS Altitude"
+    | GpsAltitude
+
 type Image = {
     Name: string
     FullPath: string
-    CreatedAt: DateTime option
-    Metadata: Map<string, string>
+    Metadata: Map<MetaAttribute, string>
 }
+
+[<RequireQualifiedAccess>]
+module MetaAttribute =
+    let [<Literal>] createdAt = "Date/Time Original"
+    let [<Literal>] model = "Model"
+    let [<Literal>] gpsLatitude = "GPS Latitude"
+    let [<Literal>] gpsLongitude = "GPS Longitude"
+    let [<Literal>] gpsAltitude = "GPS Altitude"
+
+    let value = function
+        | CreatedAt -> createdAt
+        | Model -> model
+        | GpsLatitude -> gpsLatitude
+        | GpsLongitude -> gpsLongitude
+        | GpsAltitude -> gpsAltitude
 
 [<RequireQualifiedAccess>]
 module Image =
     let name { Name = name } = name
+
+    let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
+    let createdAtDateTime = createdAtRaw >> Option.map DateTime.Parse
+    let model { Metadata = metaData } = metaData.TryFind Model
 
 [<RequireQualifiedAccess>]
 type FFMpeg =

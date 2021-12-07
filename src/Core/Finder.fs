@@ -10,10 +10,9 @@ module Finder =
     open MF.ErrorHandling
 
     let createImage output ignoreWarnings ffmpeg prefix file = asyncResult {
-        // todo - vycistit MetaData.fs - dotahnout, aby se to parsovalo v novem modulu a dateTimeOriginal byl az z parsovanych metadat
-        // - parsovat i video
+        // todo - parsovat i video
 
-        let! (dateTimeOriginal, metadata) =
+        let! metadata =
             file
             |> MetaData.find output ignoreWarnings ffmpeg
 
@@ -26,7 +25,6 @@ module Finder =
                 | _ -> originalName
 
             FullPath = file |> Path.GetFullPath
-            CreatedAt = dateTimeOriginal
             Metadata = metadata
         }
     }

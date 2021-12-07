@@ -24,17 +24,17 @@ module Prepare =
         let month = sprintf "%02i"
 
         let targetPath (image: Image) =
-            match config, image with
-            | { TargetSubdirFallback = None }, { CreatedAt = None }
+            match config, image |> Image.createdAtDateTime with
+            | { TargetSubdirFallback = None }, None
             | { TargetSubdir = Flat }, _ -> config.Target / image.Name
 
-            | { TargetSubdir = ByMonth; TargetSubdirFallback = Some fallback }, { CreatedAt = None }
-            | { TargetSubdir = ByYear; TargetSubdirFallback = Some fallback }, { CreatedAt = None }
-            | { TargetSubdir = ByYearAndMonth; TargetSubdirFallback = Some fallback }, { CreatedAt = None } -> config.Target / fallback / image.Name
+            | { TargetSubdir = ByMonth; TargetSubdirFallback = Some fallback }, None
+            | { TargetSubdir = ByYear; TargetSubdirFallback = Some fallback }, None
+            | { TargetSubdir = ByYearAndMonth; TargetSubdirFallback = Some fallback }, None -> config.Target / fallback / image.Name
 
-            | { TargetSubdir = ByMonth }, { CreatedAt = Some createdAt } -> config.Target / (month createdAt.Month) / image.Name
-            | { TargetSubdir = ByYear }, { CreatedAt = Some createdAt } -> config.Target / createdAt.Year / image.Name
-            | { TargetSubdir = ByYearAndMonth }, { CreatedAt = Some createdAt } -> config.Target / createdAt.Year / (month createdAt.Month) / image.Name
+            | { TargetSubdir = ByMonth }, Some createdAt -> config.Target / (month createdAt.Month) / image.Name
+            | { TargetSubdir = ByYear }, Some createdAt -> config.Target / createdAt.Year / image.Name
+            | { TargetSubdir = ByYearAndMonth }, Some createdAt -> config.Target / createdAt.Year / (month createdAt.Month) / image.Name
 
         filesToCopy
         |> List.iter (fun image ->

@@ -24,7 +24,7 @@ module MetaStatsCommand =
 
         let model =
             images
-            |> List.groupBy (fun image -> image.Metadata |> Map.tryFind "Model")
+            |> List.groupBy Image.model
             |> List.map (fun (k, v) -> k, v |> List.length)
 
         model

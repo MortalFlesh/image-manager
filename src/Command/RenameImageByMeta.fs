@@ -27,9 +27,9 @@ module RenameImageByMeta =
 
         with
             /// Checks whether the metadata map contains a value which meets the condition
-            member this.Meets(metadata: Map<string, string>) =
+            member this.Meets(metadata: Map<MetaAttribute, string>) =
                 match this with
-                | IsModel model -> metadata |> Map.tryFind "Model" = Some model
+                | IsModel model -> metadata |> Map.tryFind Model = Some model
 
     [<RequireQualifiedAccess>]
     module private Config =
@@ -105,7 +105,7 @@ module RenameImageByMeta =
 
         if output.IsVeryVerbose() then
             images
-            |> List.groupBy (fun image -> image.Metadata |> Map.tryFind "Model")
+            |> List.groupBy Image.model
             |> List.map (fun (k, v) -> k, v |> List.length)
             |> List.sortBy snd
             |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
@@ -134,7 +134,7 @@ module RenameImageByMeta =
             |> tee (List.length >> prepareRenamesProgress.Start)
             |> List.choose (fun image ->
                 maybe {
-                    let! imageTakenBy = image.Metadata |> Map.tryFind "Model"
+                    let! imageTakenBy = image |> Image.model
                     let! prefix = prefixByModelTable |> Map.tryFind imageTakenBy
 
                     if image.Name.StartsWith prefix then

@@ -157,27 +157,29 @@ module MetaData =
         | _ -> return! file |> DateTimeOriginal.forVideo output ffmpeg
     }
 
-    let find output ignoreWarnings ffmpeg file: AsyncResult<DateTime option * Map<string, string>, PrepareError> = asyncResult {
+    let find output ignoreWarnings ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
         let parsedMetadata =
             file
             |> Meta.forImage output ignoreWarnings [
                 "Exif SubIFD", "Date/Time Original"
                 "Exif IFD0", "Model"
-
                 "GPS", "GPS Latitude"
                 "GPS", "GPS Longitude"
                 "GPS", "GPS Altitude"
             ]
 
-        let dateTimeOriginal =
-            parsedMetadata
-            |> List.tryFind (fst >> (=) "Date/Time Original")
-            |> Option.bind (snd >> DateTimeOriginal.parse output file)
-
         return
-            dateTimeOriginal,
             parsedMetadata
-            |> List.filter (fst >> (<>) "Date/Time Original")
-            |> List.map (fun (k, t) -> k, t.Description)
+            |> List.choose (function
+                | MetaAttribute.createdAt, value ->
+                    value
+                    |> DateTimeOriginal.parse output file
+                    |> Option.map (fun createdAt -> CreatedAt, string createdAt)
+                | MetaAttribute.model, value -> Some (Model, value.Description)
+                | MetaAttribute.gpsLatitude, value -> Some (GpsLatitude, value.Description)
+                | MetaAttribute.gpsLongitude, value -> Some (GpsLongitude, value.Description)
+                | MetaAttribute.gpsAltitude, value -> Some (GpsAltitude, value.Description)
+                | _ -> None
+            )
             |> Map.ofList
     }

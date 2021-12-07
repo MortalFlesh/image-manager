@@ -20,19 +20,21 @@ module FindSameImages =
             target
             |> Finder.findAllImagesInDir output ignoreWarnings None None
 
-        output.NewLine()
+        if output.IsVerbose() then
+            output.NewLine()
 
-        images
-        |> List.iter (fun i ->
-            output.Message $"Image <c:cyan>{i.Name}</c>"
-            output.Message $"  <c:gray>> {i.FullPath}</c>"
+            images
+            |> List.sortBy Image.name
+            |> List.iter (fun i ->
+                output.Message $"Image <c:cyan>{i.Name}</c>"
+                output.Message $"  <c:gray>> {i.FullPath}</c>"
 
-            i.Metadata
-            |> Map.toList
-            |> List.sortBy fst
-            |> List.map (fun (k, v) -> [ k; v ])
-            |> output.Table [ "Meta"; "Value" ]
-        )
+                i.Metadata
+                |> Map.toList
+                |> List.sortBy fst
+                |> List.map (fun (k, v) -> [ k |> MetaAttribute.value; v ])
+                |> output.Table [ "Meta"; "Value" ]
+            )
 
         return "Done"
     }
