@@ -142,7 +142,7 @@ module FindSameImages =
     let private run output ignoreWarnings cache copyTo target = asyncResult {
         let! images =
             target
-            |> Finder.findAllImagesInDir output ignoreWarnings None None
+            |> Finder.findAllImagesInDir output ignoreWarnings FFMpeg.empty None
             <@> List.map PrepareError.format
 
         if output.IsVeryVerbose() then

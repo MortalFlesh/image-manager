@@ -99,7 +99,7 @@ module RenameImageByMeta =
     let private run output ignoreWarnings (config: Config) target = asyncResult {
         let! images =
             target
-            |> Finder.findAllImagesInDir output ignoreWarnings None None
+            |> Finder.findAllImagesInDir output ignoreWarnings FFMpeg.empty None
 
         output.NewLine()
 

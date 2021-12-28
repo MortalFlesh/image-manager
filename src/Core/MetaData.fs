@@ -157,7 +157,10 @@ module MetaData =
     }
 
     let find output ignoreWarnings ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
-        let parsedMetadata =
+        // todo - jak poznat obr vs video?
+        // todo - pridat meta videa a kouknout, jestli tam jsou nejaka dalsi uzitecna
+
+        let parsedImageMetadata =
             file
             |> Meta.forImage output ignoreWarnings [
                 "Exif SubIFD", "Date/Time Original"
@@ -167,8 +170,14 @@ module MetaData =
                 "GPS", "GPS Altitude"
             ]
 
+        let! videoCreatedAt =
+            // todo - aktualne je to udelane tak, aby fungovalo createdAt u videa, jinak to chce jeste poladit a vytahnout z toho asi vic
+            if parsedImageMetadata |> List.isEmpty
+                then file |> Meta.forVideo output ignoreWarnings ffmpeg
+                else AsyncResult.ofSuccess None
+
         return
-            parsedMetadata
+            parsedImageMetadata
             |> List.choose (function
                 | MetaAttribute.KeyCreatedAt, value ->
                     value
@@ -180,5 +189,10 @@ module MetaData =
                 | MetaAttribute.KeyGpsAltitude, value -> Some (GpsAltitude, value.Description)
                 | _ -> None
             )
+            |> List.append [
+                match videoCreatedAt with
+                | Some value -> CreatedAt, value |> DateTime.formatToExif
+                | _ -> ()
+            ]
             |> Map.ofList
     }

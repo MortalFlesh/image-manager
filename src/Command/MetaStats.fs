@@ -29,6 +29,29 @@ module MetaStatsCommand =
         |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
         |> output.Table [ "Model"; "Count" ]
 
+        if output.IsDebug() then
+            images
+            |> List.collect (fun i ->
+                let firstMeta, meta =
+                    let format (k, v) =
+                        $"<c:yellow>{k |> MetaAttribute.value}</c>: {v}"
+
+                    match i.Metadata |> Map.toList with
+                    | [] -> "<c:red>---</c>", []
+                    | [ one ] -> one |> format, []
+                    | first :: rest -> first |> format, rest |> List.map format
+
+                [
+                    yield [
+                        $"<c:cyan>{i.Name}</c>"
+                        $"<c:gray>{i.FullPath}</c>"
+                        firstMeta
+                    ]
+                    yield! meta |> List.map (fun m -> [ ""; ""; m ])
+                ]
+            )
+            |> output.Table [ "Image"; "Path"; "Meta" ]
+
         return "Done"
     }
 
@@ -43,7 +66,10 @@ module MetaStatsCommand =
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton
 
-            let ignoreWarnings = true
+            if output.IsVerbose() then
+                output.Message <| sprintf "FFMpeg: %A" ffmpeg
+
+            let ignoreWarnings = false
 
             return! target |> run output ignoreWarnings ffmpeg
         }

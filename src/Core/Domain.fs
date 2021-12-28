@@ -43,6 +43,7 @@ type MetaAttribute =
     | GpsLongitude
     /// "GPS" => "GPS Altitude"
     | GpsAltitude
+    | Other
 
 type Image = {
     Name: string
@@ -57,6 +58,7 @@ module MetaAttribute =
     let [<Literal>] KeyGpsLatitude = "GPS Latitude"
     let [<Literal>] KeyGpsLongitude = "GPS Longitude"
     let [<Literal>] KeyGpsAltitude = "GPS Altitude"
+    let [<Literal>] KeyOther = "Other"
 
     let value = function
         | CreatedAt -> KeyCreatedAt
@@ -64,6 +66,7 @@ module MetaAttribute =
         | GpsLatitude -> KeyGpsLatitude
         | GpsLongitude -> KeyGpsLongitude
         | GpsAltitude -> KeyGpsAltitude
+        | Other -> KeyOther
 
 [<RequireQualifiedAccess>]
 module Image =

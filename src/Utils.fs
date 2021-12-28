@@ -1,7 +1,34 @@
 namespace MF.Utils
 
+module internal Progress =
+    open System
+    open MF.ConsoleApplication
+
+    type Progress (output: Output, name: string) =
+        let mutable progressBar: ProgressBar option = None
+
+        member __.Start(total: int) =
+            progressBar <-
+                if output.IsDebug()
+                    then
+                        output.Message $"<c:dark-yellow>[Debug] Progress for \"{name}\" is disabled with debug mode</c>"
+                        None
+                    else Some (output.ProgressStart name total)
+
+        member __.Advance() =
+            progressBar |> Option.iter output.ProgressAdvance
+
+        member __.Finish() =
+            progressBar |> Option.iter output.ProgressFinish
+            progressBar <- None
+
+        interface IDisposable with
+            member this.Dispose() =
+                this.Finish()
+
 module FileSystem =
     open System.IO
+    open Progress
 
     let rec getAllFiles = function
         | [] -> []
@@ -34,13 +61,14 @@ module FileSystem =
         let dirs = getAllDirectories dir
 
         output.Message $"{prefix}  ├──> <c:cyan>Searching</c> for all <c:yellow>files</c> from <c:magenta>{dirs.Length}</c> directories ..."
-        let progress = output.ProgressStart "Searching for files" dirs.Length
+        use progress = new Progress(output, "Searching for files")
+        progress.Start(dirs.Length)
+
         let advance a =
-            progress |> output.ProgressAdvance
+            progress.Advance()
             a
 
         let files = dirs |> List.collect (Directory.EnumerateFiles >> ignoreDotFiles >> Seq.toList >> advance)
-        progress |> output.ProgressFinish
         output.Message $"{prefix}  └──> <c:green>Found</c> <c:magenta>{files.Length}</c> <c:yellow>files</c> ..."
 
         return files
@@ -85,6 +113,9 @@ module DateTime =
                 | _ -> None
     }
 
+    let formatToExif (dateTime: DateTime) =
+        dateTime.ToString("yyyy:MM:dd HH:mm:ss")
+
 [<RequireQualifiedAccess>]
 module Directory =
     open System.IO
@@ -114,27 +145,6 @@ module File =
         excludedFiles
         |> List.exists item.EndsWith
         |> not
-
-module internal Progress =
-    open System
-    open MF.ConsoleApplication
-
-    type Progress (output: Output, name: string) =
-        let mutable progressBar: ProgressBar option = None
-
-        member __.Start(total: int) =
-            progressBar <- Some (output.ProgressStart name total)
-
-        member __.Advance() =
-            progressBar |> Option.iter output.ProgressAdvance
-
-        member __.Finish() =
-            progressBar |> Option.iter output.ProgressFinish
-            progressBar <- None
-
-        interface IDisposable with
-            member this.Dispose() =
-                this.Finish()
 
 [<RequireQualifiedAccess>]
 module Errors =
