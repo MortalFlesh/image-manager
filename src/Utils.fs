@@ -49,31 +49,6 @@ module FileSystem =
     let copy (source, target) =
         File.Copy(source, target, true)
 
-[<RequireQualifiedAccess>]
-module DateTime =
-    open System
-    open System.Globalization
-
-    /// https://stackoverflow.com/questions/22568927/how-to-parse-exif-date-time-data
-    let parseExifDateTime dateTime =
-        DateTime.TryParseExact(
-            dateTime,
-            "yyyy:MM:dd HH:mm:ss",
-            CultureInfo.CurrentCulture,
-            DateTimeStyles.None
-        )
-        |> function
-            | true, dateTime -> Some dateTime
-            | _ -> None
-
-[<RequireQualifiedAccess>]
-module Directory =
-    open System.IO
-
-    let ensure dir =
-        if dir |> Directory.Exists |> not then
-            Directory.CreateDirectory(dir) |> ignore
-
 [<AutoOpen>]
 module Regexp =
     open System.Text.RegularExpressions
@@ -83,6 +58,40 @@ module Regexp =
         let m = Regex.Match(input, pattern)
         if m.Success then Some (List.tail [ for g in m.Groups -> g.Value ])
         else None
+
+[<RequireQualifiedAccess>]
+module DateTime =
+    open System
+    open System.Globalization
+    open MF.ErrorHandling
+
+    /// https://stackoverflow.com/questions/22568927/how-to-parse-exif-date-time-data
+    let parseExifDateTime (dateTime: string) = maybe {
+        let! format =
+            match dateTime with
+            | Regex @"^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})$" [ _ ] -> Some "MM/dd/yyyy HH:mm:ss"
+            | Regex @"^(\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2})$" [ _ ] -> Some "yyyy:MM:dd HH:mm:ss"
+            | _ -> None
+
+        return!
+            DateTime.TryParseExact(
+                dateTime,
+                format,
+                CultureInfo.CurrentCulture,
+                DateTimeStyles.None
+            )
+            |> function
+                | true, dateTime -> Some dateTime
+                | _ -> None
+    }
+
+[<RequireQualifiedAccess>]
+module Directory =
+    open System.IO
+
+    let ensure dir =
+        if dir |> Directory.Exists |> not then
+            Directory.CreateDirectory(dir) |> ignore
 
 [<AutoOpen>]
 module Utils =
