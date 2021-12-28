@@ -1,24 +1,25 @@
 namespace MF.ImageManager.Prepare
 
-open System
-
 module Prepare =
     open System.IO
-    open System.Collections.Generic
-    open MetadataExtractor
     open MF.ImageManager
     open MF.ConsoleApplication
     open MF.Utils
+    open MF.Utils.Progress
     open MF.ErrorHandling
 
     let private copyFiles output config filesToCopy =
         let totalCount = filesToCopy |> List.length
         output.Message $"Copy files[<c:magenta>{totalCount}</c>]"
 
-        let progress =
+        use progress =
+            let progress = new Progress(output, "\n")
+
             match config.TargetDirMode with
-            | DryRun -> None
-            | _ -> totalCount |> output.ProgressStart "\n" |> Some
+            | DryRun -> progress
+            | _ ->
+                progress.Start(totalCount)
+                progress
 
         let (/) (a: obj) (b: obj) = Path.Combine(string a, string b)
         let month = sprintf "%02i"
@@ -51,12 +52,12 @@ module Prepare =
                 (image.FullPath, targetPath)
                 |> FileSystem.copy
 
-                progress |> Option.iter output.ProgressAdvance
+                progress.Advance()
         )
 
         match config.TargetDirMode with
         | DryRun -> output.Message "  └──> <c:green>Done</c>"
-        | _ -> progress |> Option.iter output.ProgressFinish
+        | _ -> ()
 
         output.NewLine()
 

@@ -192,6 +192,9 @@ module FindSameImages =
 
             let ignoreWarnings = true
 
+            // todo - asi odstranit cache
+            // todo - moznost pridat dalsi slozku (pak pustit 20XX + roztridit, ...)
+
             // todo - cache is not yet working, it would only use all the images not any subset by a directory or anything
             // todo - serialize/deserialize also doesn't work yet
             // let cache = FreshAndCacheResultToFile "hashCache.hshlib"

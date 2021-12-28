@@ -32,13 +32,11 @@ module PrepareCommand =
             let target = input |> Input.getArgumentValue "target"
             let exclude =
                 match input with
-                | Input.HasOption "exclude" _ ->
-                    input |> Input.getOptionValueAsList "exclude"
+                | Input.HasOption "exclude" _ -> input |> Input.getOptionValueAsList "exclude"
                 | _ -> []
             let excludeList =
                 match input with
-                | Input.HasOption "exclude-list" _ ->
-                    input |> Input.getOptionValueAsString "exclude-list"
+                | Input.HasOption "exclude-list" _ -> input |> Input.getOptionValueAsString "exclude-list"
                 | _ -> None
             let prefix =
                 match input with

@@ -61,7 +61,7 @@ module Finder =
         |> List.distinct
         |> List.map (findAllImagesInDir output ignoreWarnings ffmpeg prefix)
         |> AsyncResult.ofSequentialAsyncResults (PrepareError.Exception >> List.singleton)
-        |> AsyncResult.map (List.concat >> List.distinctBy Image.name)
+        |> AsyncResult.map List.concat
         |> AsyncResult.mapError List.concat
 
     let findFilesAndDirsToExclude targetDirMode exclude excludeList target =

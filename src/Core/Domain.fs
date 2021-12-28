@@ -71,7 +71,7 @@ module Image =
     let path { FullPath = path } = path
 
     let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
-    let createdAtDateTime = createdAtRaw >> Option.map DateTime.Parse
+    let createdAtDateTime = createdAtRaw >> Option.bind DateTime.parseExifDateTime
     let model { Metadata = metaData } = metaData.TryFind Model
 
 [<RequireQualifiedAccess>]
