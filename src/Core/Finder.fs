@@ -11,6 +11,7 @@ module Finder =
 
     let createImage output ignoreWarnings ffmpeg prefix file = asyncResult {
         // todo - parsovat i video
+        // prejmenovat image na File (asi) a rozlisovat co je co
 
         let! metadata =
             file
@@ -50,7 +51,7 @@ module Finder =
 
         let! images =
             createImages
-            |> AsyncResult.ofParallelAsyncResults PrepareError.Exception
+            |> AsyncResult.handleMultipleResults output PrepareError.Exception
             |> AsyncResult.tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> images with metadata" >> output.Message)
 
         return images

@@ -43,7 +43,47 @@ type MetaAttribute =
     | GpsLongitude
     /// "GPS" => "GPS Altitude"
     | GpsAltitude
+    /// GPS in ISO6709 format (Latitude+Longitude+Altitude)
+    /// see: https://en.wikipedia.org/wiki/ISO_6709
+    /// example: +49.6196+018.2302+478.329/
+    /// other: https://www.codeproject.com/Articles/151869/Parsing-Latitude-and-Longitude-Information
+    | GpsIso6709
     | Other
+
+[<RequireQualifiedAccess>]
+module Video =
+    /// https://en.wikipedia.org/wiki/Video_file_format
+    let formats = Set [
+        "webm"
+        "mkv"
+        "flv"
+        "vob"
+        "ogb"; "ogg"
+        "drc"
+        "gifv"
+        "mng"
+        "avi"
+        "MTS"; "M2TS"; "TS"
+        "mov"; "qt"
+        "wmv"
+        "yuv"
+        "rm"
+        "rmvb"
+        "viv"
+        "asf"
+        "amv"
+        "mp4"; "m4p"; "m4v"
+        "mpg"; "mp2"; "mpeg"; "m2v"
+        "svi"
+        "3gp"
+        "3g2"
+        "mxf"
+        "roq"
+        "nsv"
+        "flv"; "f4v"; "f4p"; "f4a"; "f4b"
+    ]
+
+    let extensions = formats |> Set.map (String.toLower >> (+) ".")
 
 type Image = {
     Name: string
@@ -58,6 +98,7 @@ module MetaAttribute =
     let [<Literal>] KeyGpsLatitude = "GPS Latitude"
     let [<Literal>] KeyGpsLongitude = "GPS Longitude"
     let [<Literal>] KeyGpsAltitude = "GPS Altitude"
+    let [<Literal>] KeyGpsIso6709 = "GPS ISO6709"
     let [<Literal>] KeyOther = "Other"
 
     let value = function
@@ -66,6 +107,7 @@ module MetaAttribute =
         | GpsLatitude -> KeyGpsLatitude
         | GpsLongitude -> KeyGpsLongitude
         | GpsAltitude -> KeyGpsAltitude
+        | GpsIso6709 -> KeyGpsIso6709
         | Other -> KeyOther
 
 [<RequireQualifiedAccess>]
@@ -76,6 +118,20 @@ module Image =
     let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
     let createdAtDateTime = createdAtRaw >> Option.bind DateTime.parseExifDateTime
     let model { Metadata = metaData } = metaData.TryFind Model
+
+type FileType =
+    | Image of string
+    | Video of string
+
+[<RequireQualifiedAccess>]
+module FileType =
+    open System.IO
+
+    let determine = function
+        | null | "" -> None
+        | wierdFile when wierdFile |> Path.HasExtension |> not -> None
+        | video when video |> Path.GetExtension |> String.toLower |> Video.extensions.Contains -> Some (Video video)
+        | image -> Some (Image image)
 
 [<RequireQualifiedAccess>]
 type FFMpeg =

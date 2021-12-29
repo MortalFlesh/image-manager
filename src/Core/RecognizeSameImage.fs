@@ -113,7 +113,7 @@ module RecognizeSameImage =
             images
             |> tee (List.length >> progress.Start)
             |> List.map (ImageWithHash.fromImage output >> tee (fun _ -> progress.Advance()))
-            |> AsyncResult.ofParallelAsyncResults id <@> List.map formatError
+            |> AsyncResult.handleMultipleResults output id <@> List.map formatError
 
         let loadFromCache file =
             try

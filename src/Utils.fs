@@ -91,27 +91,23 @@ module Regexp =
 module DateTime =
     open System
     open System.Globalization
-    open MF.ErrorHandling
 
     /// https://stackoverflow.com/questions/22568927/how-to-parse-exif-date-time-data
-    let parseExifDateTime (dateTime: string) = maybe {
-        let! format =
+    let parseExifDateTime (dateTime: string) =
+        let format =
             match dateTime with
             | Regex @"^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})$" [ _ ] -> Some "MM/dd/yyyy HH:mm:ss"
             | Regex @"^(\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2})$" [ _ ] -> Some "yyyy:MM:dd HH:mm:ss"
             | _ -> None
 
-        return!
-            DateTime.TryParseExact(
-                dateTime,
-                format,
-                CultureInfo.CurrentCulture,
-                DateTimeStyles.None
-            )
-            |> function
-                | true, dateTime -> Some dateTime
-                | _ -> None
-    }
+        let parsed =
+            match format with
+            | Some format -> DateTime.TryParseExact(dateTime, format, CultureInfo.CurrentCulture, DateTimeStyles.None)
+            | _ -> DateTime.TryParse(dateTime)
+
+        match parsed with
+        | true, dateTime -> Some dateTime
+        | _ -> None
 
     let formatToExif (dateTime: DateTime) =
         dateTime.ToString("yyyy:MM:dd HH:mm:ss")
@@ -161,3 +157,15 @@ module Errors =
         else
             errors
             |> List.iter output.Error
+
+[<RequireQualifiedAccess>]
+module String =
+    let toLower (s: string) = s.ToLowerInvariant()
+
+[<RequireQualifiedAccess>]
+module AsyncResult =
+    open MF.ErrorHandling
+
+    let handleMultipleResults (output: MF.ConsoleApplication.Output) =
+        if output.IsDebug() then AsyncResult.ofSequentialAsyncResults
+        else AsyncResult.ofParallelAsyncResults
