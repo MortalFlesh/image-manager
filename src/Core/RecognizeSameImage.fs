@@ -1,6 +1,6 @@
 namespace MF.ImageManager
 
-type SameImageGroup = string * Image list
+type SameImageGroup = string * File list
 
 type SameImageAdepts = {
     ByCompleteHash: SameImageGroup list
@@ -19,7 +19,7 @@ module RecognizeSameImage =
     open MF.ErrorHandling.AsyncResult.Operators
 
     type private TableItem = {
-        Image: Image
+        Image: File
         CompleteHash: string
         DateTimeOriginal: string
         Gps: string
@@ -27,11 +27,11 @@ module RecognizeSameImage =
 
     [<RequireQualifiedAccess>]
     module private TableItem =
-        let create (image: Image) =
+        let create (image: File) =
             {
                 Image = image
                 CompleteHash = image.Metadata |> Map.values |> String.concat "-"
-                DateTimeOriginal = image |> Image.createdAtRaw |> Option.defaultValue ""
+                DateTimeOriginal = image |> File.createdAtRaw |> Option.defaultValue ""
                 Gps =
                     [
                         image.Metadata.TryFind GpsLatitude
@@ -102,7 +102,7 @@ module RecognizeSameImage =
 
     open MF.ImageManager.ImageComparator
 
-    let private findImageByContent output cache (images: Image list) = asyncResult {
+    let private findImageByContent output cache (images: File list) = asyncResult {
         let formatError (e: exn) =
             if output.IsVeryVerbose() then sprintf "%A" e
             else e.Message
@@ -171,7 +171,7 @@ module RecognizeSameImage =
             )
     }
 
-    let findSameImages output cache (images: Image list): AsyncResult<SameImageAdepts, string list> = asyncResult {
+    let findSameImages output cache (images: File list): AsyncResult<SameImageAdepts, string list> = asyncResult {
         let! byCompleteHash, byDateTimeOriginal, byGps = images |> findImageByMetadata output
 
         let! byContent =
@@ -183,11 +183,11 @@ module RecognizeSameImage =
                 ]
                 |> List.concat
                 |> List.collect snd
-                |> List.map Image.path
+                |> List.map File.path
                 |> Set.ofList
 
             images
-            |> List.filter (Image.path >> exlude.Contains >> not)
+            |> List.filter (File.path >> exlude.Contains >> not)
             |> findImageByContent output cache
             >>- fun errors ->
                 if output.IsVerbose() then errors |> List.iter output.Error

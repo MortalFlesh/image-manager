@@ -7,12 +7,14 @@ open MF.Utils
 type PrepareError =
     | Exception of exn
     | ErrorMessage of string
+    | NotImageOrVideo of string
 
 [<RequireQualifiedAccess>]
 module PrepareError =
     let format = function
         | PrepareError.Exception e -> e.Message
         | PrepareError.ErrorMessage e -> e
+        | PrepareError.NotImageOrVideo path -> $"File {path} is not an image or a video."
 
 type TargetDirMode =
     | Override
@@ -85,11 +87,104 @@ module Video =
 
     let extensions = formats |> Set.map (String.toLower >> (+) ".")
 
-type Image = {
+type FileType =
+    | Image of string
+    | Video of string
+
+[<RequireQualifiedAccess>]
+module FileType =
+    open System.IO
+
+    let determine = function
+        | null | "" -> None
+        | wierdFile when wierdFile |> Path.HasExtension |> not -> None
+        | video when video |> Path.GetExtension |> String.toLower |> Video.extensions.Contains -> Some (Video video)
+        | image -> Some (Image image)
+
+type Hash = Hash of string
+
+type File = {
+    Type: FileType
     Name: string
+    Hash: Hash option
     FullPath: string
     Metadata: Map<MetaAttribute, string>
 }
+
+[<RequireQualifiedAccess>]
+module private Crypt =
+    open System.Text
+    open System.Security.Cryptography
+
+    let private hash compute (v: string) =
+        v
+        |> Encoding.ASCII.GetBytes
+        |> compute
+        |> System.BitConverter.ToString
+        |> String.replace "-" ""
+        |> String.toLower
+
+    let private hashBy alg = hash (HashAlgorithm.Create(alg).ComputeHash)
+
+    let sha1 = hashBy "SHA1"
+    let sha256 = hashBy "SHA256"
+    let md5 = hashBy "MD5"
+
+    let crc32 = Crc32.crc32OfString
+
+[<RequireQualifiedAccess>]
+module Hash =
+    open MF.ErrorHandling
+    open MF.ErrorHandling.Option.Operators
+
+    let value (Hash hash) = hash
+
+    let calculate fileType (metadata: Map<MetaAttribute, string>) =
+        let value key = metadata |> Map.tryFind key
+        let noSpaces = String.replace " " ""
+        let clearChars toReplace string =
+            toReplace
+            |> List.distinct
+            |> List.fold (fun result char -> result |> String.replace char "") string
+
+        let clear =
+            [
+                match fileType with
+                | FileType.Image _ -> Some "i"
+                | FileType.Video _ -> Some "v"
+
+                value CreatedAt
+                >>= DateTime.parseExifDateTime
+                <!> fun d -> d.ToString("yyyyMMddTHHmmss")
+            ]
+            |> List.choose id
+            |> String.concat "_"
+
+        let crypted =
+            [
+                value Model
+                <!> noSpaces
+
+                value GpsIso6709
+                <??> (maybe {
+                    let! latitude = value GpsLatitude
+                    let! longitude = value GpsLongitude
+                    let! altitude = value GpsAltitude
+
+                    return $"{latitude}--{longitude}--{altitude}"
+                })
+                <!> noSpaces
+            ]
+            |> List.choose id
+            |> String.concat "_"
+            |> Crypt.crc32
+
+        $"{clear}_{crypted}"
+        |> clearChars [
+            "/"; "\\"; "?"; "%"; "*"; ":"; "|"; "\""; "<"; ">"; "."; ","; ";"; "="
+            yield! IO.Path.GetInvalidFileNameChars() |> Seq.map string
+        ]
+        |> Hash
 
 [<RequireQualifiedAccess>]
 module MetaAttribute =
@@ -111,27 +206,14 @@ module MetaAttribute =
         | Other -> KeyOther
 
 [<RequireQualifiedAccess>]
-module Image =
+module File =
     let name { Name = name } = name
     let path { FullPath = path } = path
+    let hash { Hash = hash } = hash
 
     let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
     let createdAtDateTime = createdAtRaw >> Option.bind DateTime.parseExifDateTime
     let model { Metadata = metaData } = metaData.TryFind Model
-
-type FileType =
-    | Image of string
-    | Video of string
-
-[<RequireQualifiedAccess>]
-module FileType =
-    open System.IO
-
-    let determine = function
-        | null | "" -> None
-        | wierdFile when wierdFile |> Path.HasExtension |> not -> None
-        | video when video |> Path.GetExtension |> String.toLower |> Video.extensions.Contains -> Some (Video video)
-        | image -> Some (Image image)
 
 [<RequireQualifiedAccess>]
 type FFMpeg =

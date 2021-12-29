@@ -73,8 +73,8 @@ module RenameImageByMeta =
     ]
 
     [<RequireQualifiedAccess>]
-    module private Image =
-        let (|IsMatching|_|) (condition: MetaCondition) (image: Image) =
+    module private File =
+        let (|IsMatching|_|) (condition: MetaCondition) (image: File) =
             match image with
             | { Metadata = metadata } when condition.Meets metadata -> Some IsMatching
             | _ -> None
@@ -83,7 +83,7 @@ module RenameImageByMeta =
             | IsMatching condition -> true
             | _ -> false
 
-        let addPrefix prefix (image: Image) =
+        let addPrefix prefix (image: File) =
             let prefixedName = $"{prefix}{image.Name}"
 
             { image
@@ -92,20 +92,20 @@ module RenameImageByMeta =
                     FullPath = image.FullPath.Replace(image.Name, prefixedName)
             }
 
-        let replace (oldImage: Image) (newImage: Image) = async {
+        let replace (oldImage: File) (newImage: File) = async {
             File.Move(oldImage.FullPath, newImage.FullPath, false)
         }
 
     let private run output ignoreWarnings (config: Config) target = asyncResult {
         let! images =
             target
-            |> Finder.findAllImagesInDir output ignoreWarnings FFMpeg.empty None
+            |> Finder.findAllFilesInDir output ignoreWarnings FFMpeg.empty None
 
         output.NewLine()
 
         if output.IsVeryVerbose() then
             images
-            |> List.groupBy Image.model
+            |> List.groupBy File.model
             |> List.map (fun (k, v) -> k, v |> List.length)
             |> List.sortBy snd
             |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
@@ -134,7 +134,7 @@ module RenameImageByMeta =
             |> tee (List.length >> prepareRenamesProgress.Start)
             |> List.choose (fun image ->
                 maybe {
-                    let! imageTakenBy = image |> Image.model
+                    let! imageTakenBy = image |> File.model
                     let! prefix = prefixByModelTable |> Map.tryFind imageTakenBy
 
                     if image.Name.StartsWith prefix then
@@ -144,8 +144,8 @@ module RenameImageByMeta =
                     return asyncResult {
                         do!
                             image
-                            |> Image.addPrefix prefix
-                            |> Image.replace image
+                            |> File.addPrefix prefix
+                            |> File.replace image
                             |> AsyncResult.ofAsyncCatch id
 
                         return prefix, imageTakenBy
@@ -226,6 +226,7 @@ module RenameImageByMeta =
                 |> List.iter (function
                     | PrepareError.Exception e -> output.Error e.Message
                     | PrepareError.ErrorMessage message -> output.Error message
+                    | PrepareError.NotImageOrVideo path -> output.Error $"File {path} is not an image or a video."
                 )
 
                 ExitCode.Error

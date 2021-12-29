@@ -46,6 +46,7 @@ module MetaData =
 
             let private tryFind (tags: Dictionary<string, string>) name =
                 match tags.TryGetValue(name) with
+                | true, String.IsEmpty -> None
                 | true, value -> Some (name, value)
                 | _ -> None
 
@@ -58,7 +59,7 @@ module MetaData =
 
                         let service = MediaToolkitService.CreateInstance(ffmpeg)
 
-                        let! result =
+                        let! (result: GetMetadataResult) =
                             service.ExecuteAsync(path |> FfTaskGetMetadata)
                             |> AsyncResult.ofTaskCatch PrepareError.Exception
 
@@ -102,8 +103,8 @@ module MetaData =
 
     let find output ignoreWarnings ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
         let! parsedMetadata =
-            match file |> FileType.determine with
-            | Some (Image file) ->
+            match file with
+            | Image file ->
                 file
                 |> Meta.forImage output ignoreWarnings [
                     "Exif SubIFD", "Date/Time Original"
@@ -125,7 +126,7 @@ module MetaData =
                 )
                 |> AsyncResult.ofSuccess
 
-            | Some (Video file) ->
+            | Video file ->
                 asyncResult {
                     let! meta =
                         file
@@ -151,11 +152,6 @@ module MetaData =
                             | _ -> None
                         )
                 }
-
-            | _ ->
-                output.Error $"File <c:gray>{file}</c> is <c:red>not a video or an image</c>."
-                // todo - warning
-                AsyncResult.ofSuccess []
 
         return parsedMetadata |> Map.ofList
     }

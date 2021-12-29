@@ -24,8 +24,8 @@ module Prepare =
         let (/) (a: obj) (b: obj) = Path.Combine(string a, string b)
         let month = sprintf "%02i"
 
-        let targetPath (image: Image) =
-            match config, image |> Image.createdAtDateTime with
+        let targetPath (image: File) =
+            match config, image |> File.createdAtDateTime with
             | { TargetSubdirFallback = None }, None
             | { TargetSubdir = Flat }, _ -> config.Target / image.Name
 
@@ -65,23 +65,23 @@ module Prepare =
         config.Target |> Directory.ensure
 
         output.NewLine()
-        output.SubTitle "Find all images in source"
-        let! allImagesInSource = config.Source |> Finder.findAllImagesInSource output ignoreWarnings config.Ffmpeg config.Prefix
+        output.SubTitle "Find all files in source"
+        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output ignoreWarnings config.Ffmpeg config.Prefix
         output.NewLine()
 
-        output.SubTitle "Exclude images from source by excluded dirs"
+        output.SubTitle "Exclude files from source by excluded dirs"
         let exclude = config.Target |> Finder.findFilesAndDirsToExclude config.TargetDirMode config.Exclude config.ExcludeList
         let! excludedFiles = exclude |> Finder.findExcludedFiles output
 
-        output.SubTitle "Copy images from source"
-        let filesToCopy = allImagesInSource |> Finder.findFilesToCopy output excludedFiles
+        output.SubTitle "Copy files from source"
+        let filesToCopy = allFilesInSource |> Finder.findFilesToCopy output excludedFiles
 
         if output.IsVeryVerbose() then
-            output.Message " * All images:"
-            output.List (allImagesInSource |> List.map Image.name)
+            output.Message " * All files:"
+            output.List (allFilesInSource |> List.map File.name)
 
             output.Message " * Files to copy:"
-            output.List (filesToCopy |> List.map Image.name)
+            output.List (filesToCopy |> List.map File.name)
 
         filesToCopy |> copyFiles output config
 

@@ -3,6 +3,7 @@ namespace MF.ImageManager.Command
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
+open MF.Utils.Utils
 
 [<RequireQualifiedAccess>]
 module MetaStatsCommand =
@@ -15,22 +16,52 @@ module MetaStatsCommand =
     ]
 
     let private run output ignoreWarnings ffmpeg target = asyncResult {
-        let! images =
+        let! files =
             target
-            |> Finder.findAllImagesInDir output ignoreWarnings ffmpeg None
+            |> Finder.findAllFilesInDir output ignoreWarnings ffmpeg None
 
-        let model =
-            images
-            |> List.groupBy Image.model
-            |> List.map (fun (k, v) -> k, v |> List.length)
-
-        model
+        files
+        |> List.groupBy File.model
+        |> List.map (fun (k, v) -> k, v |> List.length)
         |> List.sortBy snd
         |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
         |> output.Table [ "Model"; "Count" ]
 
+        let filter items =
+            if output.IsDebug() then items
+            else items |> List.filter (snd >> (fun x -> x > 1))
+
+        (*
+        let crypt v = v, v |> Crypt.md5 // or other alg
+
+        files
+        |> List.groupBy (File.hash >> Option.map Hash.value >> Option.defaultValue "-" >> crypt)
+        |> List.map (fun (k, v) -> k, v |> List.length)
+        |> (tee (fun all ->
+            if (all |> List.distinctBy (fst >> fst) |> List.length) <> (all |> List.distinctBy (fst >> snd) |> List.length) then
+                output.Error "There is error in this algorithm"
+            else
+                output.Success "Algorithm seems to be ok"
+        ))
+        |> filter
+        |> List.sortBy fst
+        |> List.map (fun ((hash, crypted), count) -> [ hash; crypted; string count ])
+        |> fun all -> all |> output.Table [ $"Hash ({all.Length})"; "Hash<crypted>"; "Count" ] *)
+
+        files
+        |> List.groupBy (File.hash >> Option.map Hash.value >> Option.defaultValue "-")
+        |> List.map (fun (k, v) -> k, v |> List.length)
+        |> filter
+        |> List.sortBy fst
+        |> List.map (fun (hash, count) -> [ hash; string count ])
+        |> fun all -> all |> output.Table [ $"Hash ({all.Length})"; "Count" ]
+
         if output.IsDebug() then
-            images
+            let separator =
+                let separator = "<c:gray>---</c>"
+                [ separator; separator; separator; separator ]
+
+            files
             |> List.collect (fun i ->
                 let firstMeta, meta =
                     let format (k, v) =
@@ -44,13 +75,19 @@ module MetaStatsCommand =
                 [
                     yield [
                         $"<c:cyan>{i.Name}</c>"
+
+                        match i.Hash with
+                        | Some (Hash hash) -> $"[<c:magenta>{hash.Length}</c>] <c:dark-yellow>{hash}</c>"
+                        | _ -> $"<c:red>---</c>"
+
                         $"<c:gray>{i.FullPath}</c>"
                         firstMeta
                     ]
-                    yield! meta |> List.map (fun m -> [ ""; ""; m ])
+                    yield! meta |> List.map (fun m -> [ ""; ""; ""; m ])
+                    yield separator
                 ]
             )
-            |> output.Table [ "Image"; "Path"; "Meta" ]
+            |> output.Table [ "Image"; "Hash"; "Path"; "Meta" ]
 
         return "Done"
     }
@@ -83,6 +120,7 @@ module MetaStatsCommand =
                 |> List.iter (function
                     | PrepareError.Exception e -> output.Error e.Message
                     | PrepareError.ErrorMessage message -> output.Error message
+                    | PrepareError.NotImageOrVideo path -> output.Error $"File {path} is not an image or a video."
                 )
 
                 ExitCode.Error

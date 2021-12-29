@@ -8,7 +8,7 @@ open MF.ErrorHandling
 open MF.ErrorHandling.AsyncResult.Operators
 open MF.Utils
 
-type private DomainImage = MF.ImageManager.Image
+type private DomainImage = MF.ImageManager.File
 
 type ImageHash = ImageHash of int array
 

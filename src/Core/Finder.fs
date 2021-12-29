@@ -9,15 +9,20 @@ module Finder =
     open MF.Utils.Progress
     open MF.ErrorHandling
 
-    let createImage output ignoreWarnings ffmpeg prefix file = asyncResult {
-        // todo - parsovat i video
-        // prejmenovat image na File (asi) a rozlisovat co je co
+    let createFile output ignoreWarnings ffmpeg prefix file = asyncResult {
+        let! fileType = file |> FileType.determine |> Result.ofOption (PrepareError.NotImageOrVideo file) |> AsyncResult.ofResult
 
-        let! metadata =
-            file
+        let! (metadata: Map<MetaAttribute, string>) =
+            fileType
             |> MetaData.find output ignoreWarnings ffmpeg
 
+        let hash =
+            if metadata.IsEmpty then None   // todo - poresit
+            else Hash.calculate fileType metadata |> Some
+
         return {
+            Type = fileType
+            Hash = hash
             Name =
                 let originalName = file |> Path.GetFileName
 
@@ -30,10 +35,10 @@ module Finder =
         }
     }
 
-    let findAllImagesInDir output ignoreWarnings ffmpeg prefix dir = asyncResult {
+    let findAllFilesInDir output ignoreWarnings ffmpeg prefix dir = asyncResult {
         output.Message $"Searching all images in <c:cyan>{dir}</c>"
 
-        let! files =
+        let! (files: string list) =
             dir
             |> FileSystem.getAllFilesAsync output FileSystem.SearchFiles.IgnoreDotFiles
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
@@ -41,26 +46,26 @@ module Finder =
         use progress = new Progress(output, "Check metadata")
         progress.Start(files.Length)
 
-        let createImages =
+        let createFiles =
             files
             |> tee (List.length >> sprintf "  ├──> found <c:magenta>%i</c> files, <c:yellow>parallely checking metadata ...</c>" >> output.Message)
             |> List.map (
-                createImage output ignoreWarnings ffmpeg prefix
+                createFile output ignoreWarnings ffmpeg prefix
                 >> AsyncResult.tee (ignore >> progress.Advance)
             )
 
-        let! images =
-            createImages
+        let! files =
+            createFiles
             |> AsyncResult.handleMultipleResults output PrepareError.Exception
             |> AsyncResult.tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> images with metadata" >> output.Message)
 
-        return images
+        return files
     }
 
-    let findAllImagesInSource output ignoreWarnings ffmpeg prefix source =
+    let findAllFilesInSource output ignoreWarnings ffmpeg prefix source =
         source
         |> List.distinct
-        |> List.map (findAllImagesInDir output ignoreWarnings ffmpeg prefix)
+        |> List.map (findAllFilesInDir output ignoreWarnings ffmpeg prefix)
         |> AsyncResult.ofSequentialAsyncResults (PrepareError.Exception >> List.singleton)
         |> AsyncResult.map List.concat
         |> AsyncResult.mapError List.concat
@@ -111,7 +116,7 @@ module Finder =
                         |> tee (List.length >> sprintf "  ├──> Exclude dirs[<c:red>%i</c>]" >> output.Message)
                         |> tee (List.iter (sprintf "  │      - <c:red>%s</c>" >> output.Message))
 
-                    let! files =
+                    let! (files: string list list) =
                         excludeDirs
                         |> List.map (FileSystem.getAllFilesAsync output FileSystem.SearchFiles.IgnoreDotFiles)
                         |> AsyncResult.ofSequentialAsyncs PrepareError.Exception
@@ -131,12 +136,12 @@ module Finder =
             |> tee (List.length >> sprintf "  └──> Exclude <c:magenta>%i</c> files" >> output.Message >> output.NewLine)
     }
 
-    let findFilesToCopy output excludedFiles allImagesInSource =
+    let findFilesToCopy output excludedFiles allFilesInSource =
         output.Message $"Searching all files to copy"
-        output.Message <| sprintf "  ├──> From <c:magenta>%i</c> files from source" (allImagesInSource |> List.length)
+        output.Message <| sprintf "  ├──> From <c:magenta>%i</c> files from source" (allFilesInSource |> List.length)
         output.Message <| sprintf "  ├──> Exclude <c:red>%i</c> files" (excludedFiles |> List.length)
         if output.IsDebug() then output.List excludedFiles
 
-        allImagesInSource
-        |> List.filter (Image.name >> File.notIn excludedFiles)
+        allFilesInSource
+        |> List.filter (File.name >> File.notIn excludedFiles)
         |> tee (List.length >> sprintf "  └──> There are <c:green>%i</c> files to copy" >> output.Message >> output.NewLine)

@@ -377,6 +377,18 @@ module AsyncResult =
     let ofEmptyTaskCatch (f: exn -> 'Error) (x: Task): AsyncResult<unit, 'Error> =
         x |> ofEmptyTask |> catch f
 
+    /// Lift an Option into an AsyncResult
+    let ofOption (onMissing: 'Error): Option<'Success> -> AsyncResult<'Success, 'Error> = function
+        | Some v -> ofSuccess v
+        | _ -> ofError onMissing
+
+    /// Lift an async Option into an AsyncResult
+    let ofAsyncOption (onMissing: 'Error) (aO: Async<Option<'Success>>): AsyncResult<'Success, 'Error> =
+        aO |> ofAsyncCatch (fun _ -> onMissing) |> bind (ofOption onMissing)
+
+    let ofBool (onFalse: 'Error) (b: bool): AsyncResult<unit, 'Error> =
+        if b then ofSuccess () else ofError onFalse
+
     /// Run asyncResults in Parallel, handles the errors and concats results
     let ofParallelAsyncResults<'Success, 'Error> (f: exn -> 'Error) (results: AsyncResult<'Success, 'Error> list): AsyncResult<'Success list, 'Error list> =
         results
@@ -472,6 +484,7 @@ module AsyncResult =
 
 /// The `asyncResult` computation expression is available globally without qualification
 /// See https://github.com/cmeeren/Cvdm.ErrorHandling/blob/master/src/Cvdm.ErrorHandling/AsyncResultBuilder.fs
+/// See https://github.com/demystifyfp/FsToolkit.ErrorHandling/blob/master/src/FsToolkit.ErrorHandling/AsyncResultCE.fs
 [<AutoOpen>]
 module AsyncResultComputationExpression =
     type AsyncResultBuilder() =
@@ -511,4 +524,112 @@ module AsyncResultComputationExpression =
                 this.While(enum.MoveNext,
                     this.Delay(fun () -> binder enum.Current)))
 
+    [<AutoOpen>]
+    module AsyncExtensions =
+
+        // Having Async<_> members as extensions gives them lower priority in
+        // overload resolution between Async<_> and Async<Result<_,_>>.
+        type AsyncResultBuilder with
+            member __.ReturnFrom (async: Async<'Success>) : AsyncResult<'Success, exn> =
+                async |> AsyncResult.ofAsyncCatch id
+
+            member __.ReturnFrom (task: Task<'Success>) : AsyncResult<'Success, exn> =
+                task |> AsyncResult.ofTaskCatch id
+
+            member __.ReturnFrom (task: Task) : AsyncResult<unit, exn> =
+                task |> AsyncResult.ofEmptyTaskCatch id
+
+            member this.Bind(async: Async<'SuccessA>, f: 'SuccessA -> AsyncResult<'SuccessB, exn>): AsyncResult<'SuccessB, exn> =
+                this.Bind (async |> AsyncResult.ofAsyncCatch id, f)
+
+            member this.Bind(task: Task<'SuccessA>, f: 'SuccessA -> AsyncResult<'SuccessB, exn>): AsyncResult<'SuccessB, exn> =
+                this.Bind (task |> AsyncResult.ofTaskCatch id, f)
+
+            member this.Bind(task: Task, f: unit -> AsyncResult<'Success, exn>): AsyncResult<'Success, exn> =
+                this.Bind (task |> AsyncResult.ofEmptyTaskCatch id, f)
+
+    [<AutoOpen>]
+    module ResultExtensions =
+
+        // Having Result<_> members as extensions gives them lower priority in
+        // overload resolution between Result<_> and Async<Result<_,_>>.
+        type AsyncResultBuilder with
+            member __.ReturnFrom (result: Result<'Success, 'Error>) : AsyncResult<'Success, 'Error> =
+                result |> AsyncResult.ofResult
+
+            member this.Bind(result: Result<'SuccessA, 'Error>, f: 'SuccessA -> AsyncResult<'SuccessB, 'Error>): AsyncResult<'SuccessB, 'Error> =
+                this.Bind (result |> AsyncResult.ofResult, f)
+
     let asyncResult = AsyncResultBuilder()
+
+    module internal Tests =
+        let test() =
+            let ar: AsyncResult<string, string> = asyncResult {
+                let! r = Ok ""
+                let! err_r = Error ""
+
+                return "of result"
+            }
+
+            let av: AsyncResult<string, string list> = asyncResult {
+                let validation: Validation<string, string> = Ok ""
+
+                let! v = validation
+                let! err_r = validation
+
+                return "of result"
+            }
+
+            let ofAr: AsyncResult<string, string> = asyncResult {
+                let! r = ar
+                let! err_r = ar
+
+                return "of async result"
+            }
+
+            let ofA: AsyncResult<string, exn> = asyncResult {
+                let! a = async {
+                    return ""
+                }
+
+                return a
+            }
+
+            let ofT: AsyncResult<string, exn> = asyncResult {
+                let! a = task {
+                    return ""
+                }
+
+                return a
+            }
+
+            ()
+
+        type User = User of string
+        type Token = Token of string
+
+        type LoginError =
+            | InvalidUser
+            | InvalidPwd
+            | Unauthorized of AuthError
+            | TokenErr of TokenError
+
+        and AuthError = AuthError of string
+        and TokenError = TokenError of string
+
+        open AsyncResult.Operators
+
+        let testLogin
+            (tryGetUser: string -> Async<User option>)
+            (isPwdValid: string -> User -> bool)
+            (authorize: User -> AsyncResult<unit, AuthError>)
+            (createAuthToken: User -> Result<Token, TokenError>)
+            (username, password): AsyncResult<Token, LoginError> =
+
+            asyncResult {
+                let! user = username |> tryGetUser |> AsyncResult.ofAsyncOption InvalidUser
+                do! user |> isPwdValid password |> AsyncResult.ofBool InvalidPwd
+                do! user |> authorize <@> Unauthorized
+
+                return! user |> createAuthToken |> Result.mapError TokenErr
+            }
