@@ -2,6 +2,7 @@ namespace MF.ImageManager.Command
 
 open System
 open System.IO
+open Microsoft.Extensions.Logging
 open FSharp.Data
 open MF.ConsoleApplication
 open MF.ErrorHandling
@@ -31,6 +32,10 @@ module RenameImageByMeta =
             member this.Meets(metadata: Map<MetaAttribute, string>) =
                 match this with
                 | IsModel model -> metadata |> Map.tryFind Model = Some model
+
+    type ExecuteMode =
+        | DryRun
+        | Execute
 
     [<RequireQualifiedAccess>]
     module private Config =
@@ -69,7 +74,20 @@ module RenameImageByMeta =
         Argument.required "target" "Directory with images."
     ]
 
-    let options = []
+    let options = [
+        Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and images will only be sent to stdout."
+    ]
+
+    [<RequireQualifiedAccess>]
+    type RenameFile =
+        | Original of File
+        | Renamed of File
+
+        with
+            member this.Name =
+                match this with
+                | Original i
+                | Renamed i -> i.Name
 
     [<RequireQualifiedAccess>]
     module private File =
@@ -91,11 +109,15 @@ module RenameImageByMeta =
                     FullPath = image.FullPath.Replace(image.Name, prefixedName)
             }
 
-        let replace (oldImage: File) (newImage: File) = async {
-            File.Move(oldImage.FullPath, newImage.FullPath, false)
+        let replace (files: RenameFile * RenameFile) = asyncResult {
+            match files with
+            | RenameFile.Original oldImage, RenameFile.Renamed newImage
+            | RenameFile.Renamed newImage, RenameFile.Original oldImage
+                -> return File.Move(oldImage.FullPath, newImage.FullPath, false)
+            | _ -> return! AsyncResult.ofError $"You must replace old image with a new one. You sent {files}."
         }
 
-    let private run output loggerFactory (config: Config) target = asyncResult {
+    let private run output loggerFactory (config: Config) executeMode target = asyncResult {
         let! images =
             target
             |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
@@ -126,6 +148,7 @@ module RenameImageByMeta =
         let renameImagesProgress = new Progress(output, "Rename images")
 
         let renames =
+            let logger = loggerFactory.CreateLogger("Rename")
             use prepareRenamesProgress = new Progress(output, "Prepare renames")
 
             images
@@ -140,27 +163,41 @@ module RenameImageByMeta =
                         // skip images, which already has a prefix
                         return! None
 
-                    return asyncResult {
-                        do!
-                            image
-                            |> File.addPrefix prefix
-                            |> File.replace image
-                            |> AsyncResult.ofAsyncCatch id
+                    return
+                        asyncResult {
+                            let renamedImage =
+                                image
+                                |> File.addPrefix prefix
+                                |> RenameFile.Renamed
 
-                        return prefix, imageTakenBy
-                    }
-                    |> AsyncResult.mapError (fun e -> prefix, imageTakenBy, e)
-                    |> AsyncResult.tee (ignore >> renameImagesProgress.Advance)
-                    |> AsyncResult.teeError (ignore >> renameImagesProgress.Advance)
+                            match executeMode with
+                            | DryRun ->
+                                output.Message $"  ├──> Rename image <c:cyan>{image.Name}</c> to <c:yellow>{renamedImage.Name}</c>"
+                            | Execute ->
+                                do!
+                                    (RenameFile.Original image, renamedImage)
+                                    |> File.replace
+
+                            return prefix, imageTakenBy
+                        }
+                        |> AsyncResult.mapError (fun e -> prefix, imageTakenBy, e)
+                        |> AsyncResult.tee (ignore >> renameImagesProgress.Advance)
+                        |> AsyncResult.teeError ((fun e -> logger.LogError("Rename image {image} failed with {error}", e)) >> renameImagesProgress.Advance)
                 }
+                |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├──> Renaming image <c:cyan>{image.Name}</c> is <c:dark-yellow>skipped</c>.")
                 |> tee (ignore >> prepareRenamesProgress.Advance)
             )
+
+        let handle =
+            if output.IsDebug()
+            then Async.Sequential
+            else Async.Parallel
 
         let results =
             renames
             |> tee (List.length >> sprintf "  ├──> Renaming images[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
             |> tee (List.length >> renameImagesProgress.Start)
-            |> Async.Parallel
+            |> handle
             |> Async.RunSynchronously
             |> tee (ignore >> renameImagesProgress.Finish)
             |> tee (Seq.length >> sprintf "  └──> Renaming images[<c:magenta>%i</c>] finished." >> output.Message)
@@ -206,6 +243,11 @@ module RenameImageByMeta =
                 |> Input.getArgumentValue "config"
                 |> Config.parse
 
+            let executeMode =
+                match input with
+                | Input.IsSetOption "dry-run" _ -> DryRun
+                | _ -> Execute
+
             let target = input |> Input.getArgumentValue "target"
 
             use loggerFactory =
@@ -215,7 +257,7 @@ module RenameImageByMeta =
                 |> LogLevel.parse
                 |> LoggerFactory.create "RenameByMeta"
 
-            return! target |> run output loggerFactory config
+            return! target |> run output loggerFactory config executeMode
         }
         |> Async.RunSynchronously
         |> function
