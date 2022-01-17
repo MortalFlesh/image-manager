@@ -8,6 +8,7 @@
 - Add prefix option
 - Add rename command by image meta data
 - Use net6.0
+- Log warnings and errors to file
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation

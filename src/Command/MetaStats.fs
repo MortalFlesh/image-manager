@@ -112,7 +112,7 @@ module MetaStatsCommand =
                 elif output.IsVeryVerbose() then "vv"
                 else "v"
                 |> LogLevel.parse
-                |> LoggerFactory.create
+                |> LoggerFactory.create "MetaStats"
 
             return! target |> run output loggerFactory ffmpeg
         }

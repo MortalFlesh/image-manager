@@ -114,7 +114,7 @@ module PrepareCommand =
                 elif output.IsVeryVerbose() then "vv"
                 else "v"
                 |> LogLevel.parse
-                |> LoggerFactory.create
+                |> LoggerFactory.create "PrepareImages"
 
             return!
                 config

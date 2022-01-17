@@ -30,3 +30,4 @@ AssemblyInfo.fs
 dist/
 
 .config.*
+logs/

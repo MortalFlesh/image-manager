@@ -213,7 +213,7 @@ module RenameImageByMeta =
                 elif output.IsVeryVerbose() then "vv"
                 else "v"
                 |> LogLevel.parse
-                |> LoggerFactory.create
+                |> LoggerFactory.create "RenameByMeta"
 
             return! target |> run output loggerFactory config
         }

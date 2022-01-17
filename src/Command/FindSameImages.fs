@@ -198,7 +198,7 @@ module FindSameImages =
                 elif output.IsVeryVerbose() then "vv"
                 else "v"
                 |> LogLevel.parse
-                |> LoggerFactory.create
+                |> LoggerFactory.create "findSameImages"
 
             return! target |> run output loggerFactory (outputDir, pathPart)
         }

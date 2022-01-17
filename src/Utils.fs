@@ -216,13 +216,14 @@ module Crc32 =
     let crc32OfString = crc32OfAscii >> sprintf "%x"
 
 module internal Logging =
+    open System
     open Microsoft.Extensions.Logging
+
+    let private normalizeString (string: string) =
+        string.Replace(" ", "").ToLowerInvariant()
 
     [<RequireQualifiedAccess>]
     module LogLevel =
-        let private normalizeString (string: string) =
-            string.Trim().ToLowerInvariant()
-
         let parse = normalizeString >> function
             | "trace" | "vvv" -> LogLevel.Trace
             | "debug" | "vv" -> LogLevel.Debug
@@ -234,10 +235,18 @@ module internal Logging =
 
     [<RequireQualifiedAccess>]
     module LoggerFactory =
-        let create level =
+        open NReco.Logging.File
+
+        let create command level =
             LoggerFactory.Create(fun builder ->
                 builder
                     .SetMinimumLevel(level)
-                    .AddConsole(fun c -> c.LogToStandardErrorThreshold <- LogLevel.Error)
+                    .AddFile(
+                        (command |> normalizeString |> sprintf "logs/log_%s_{0:yyyy}-{0:MM}-{0:dd}.log"),
+                        fun c ->
+                            c.FormatLogFileName <- fun name -> String.Format(name, DateTime.UtcNow)
+                            c.Append <- true
+                            c.MinLevel <- LogLevel.Trace
+                    )
                 |> ignore
             )
