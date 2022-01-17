@@ -140,7 +140,7 @@ module FindSameImages =
                 )
             )
 
-    let private run output loggerFactory cache copyTo target = asyncResult {
+    let private run output loggerFactory copyTo target = asyncResult {
         let! images =
             target
             |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
@@ -156,7 +156,7 @@ module FindSameImages =
         output.Section "Finding same images ..."
         let! sameImages =
             images
-            |> RecognizeSameImage.findSameImages output cache
+            |> RecognizeSameImage.findSameImages output
 
         match copyTo, output.IsVerbose() with
         | (None, _), _ | _, true ->
@@ -191,14 +191,7 @@ module FindSameImages =
                     failwithf "Output dir %A does NOT exists." dir
             )
 
-            // todo - asi odstranit cache
             // todo - moznost pridat dalsi slozku (pak pustit 20XX + roztridit, ...)
-
-            // todo - cache is not yet working, it would only use all the images not any subset by a directory or anything
-            // todo - serialize/deserialize also doesn't work yet
-            // let cache = FreshAndCacheResultToFile "hashCache.hshlib"
-            // let cache = FromFile "hashCache.hshlib"
-            let cache = NoCache
 
             use loggerFactory =
                 if output.IsDebug() then "vvv"
@@ -207,7 +200,7 @@ module FindSameImages =
                 |> LogLevel.parse
                 |> LoggerFactory.create
 
-            return! target |> run output loggerFactory cache (outputDir, pathPart)
+            return! target |> run output loggerFactory (outputDir, pathPart)
         }
         |> Async.RunSynchronously
         |> function

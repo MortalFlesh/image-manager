@@ -27,11 +27,6 @@ type TargetSubdir =
     | ByYear
     | ByYearAndMonth
 
-type Cache =
-    | NoCache
-    | FromFile of string
-    | FreshAndCacheResultToFile of string
-
 type Prefix = Prefix of string
 
 type MetaAttribute =

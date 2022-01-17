@@ -102,43 +102,18 @@ module RecognizeSameImage =
 
     open MF.ImageManager.ImageComparator
 
-    let private findImageByContent output cache (images: File list) = asyncResult {
+    let private findImageByContent output (images: File list) = asyncResult {
         let formatError (e: exn) =
             if output.IsVeryVerbose() then sprintf "%A" e
             else e.Message
 
-        let loadFresh () =
+        let! imagesWithHash =
             output.Message $"Loading images..."
             use progress = new Progress(output, "Find images content hash.")
             images
             |> tee (List.length >> progress.Start)
             |> List.map (ImageWithHash.fromImage output >> tee (fun _ -> progress.Advance()))
             |> AsyncResult.handleMultipleResults output id <@> List.map formatError
-
-        let loadFromCache file =
-            try
-                output.Message $"Loading images from cache <c:dark-yellow>{file}</c>..."
-                file
-                |> ImagesWithHashList.deserialize
-                |> Option.defaultValue []
-                |> AsyncResult.ofSuccess
-            with e ->
-                AsyncResult.ofError e
-
-        let! imagesWithHash =
-            match cache with
-            | NoCache -> loadFresh ()
-
-            | FromFile file ->
-                loadFromCache file
-                >>- fun e ->
-                    output.Error e.Message
-                    output.Message "<c:yellow>! Skip cache and load fresh ...</c>"
-                    loadFresh ()
-
-            | FreshAndCacheResultToFile file ->
-                loadFresh ()
-                >>* ImagesWithHashList.serialize file
 
         if output.IsDebug() then
             imagesWithHash
@@ -171,7 +146,7 @@ module RecognizeSameImage =
             )
     }
 
-    let findSameImages output cache (images: File list): AsyncResult<SameImageAdepts, string list> = asyncResult {
+    let findSameImages output (images: File list): AsyncResult<SameImageAdepts, string list> = asyncResult {
         let! byCompleteHash, byDateTimeOriginal, byGps = images |> findImageByMetadata output
 
         let! byContent =
@@ -188,7 +163,7 @@ module RecognizeSameImage =
 
             images
             |> List.filter (File.path >> exlude.Contains >> not)
-            |> findImageByContent output cache
+            |> findImageByContent output
             >>- fun errors ->
                 if output.IsVerbose() then errors |> List.iter output.Error
                 AsyncResult.ofSuccess []

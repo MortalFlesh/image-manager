@@ -5,7 +5,6 @@ open System.Drawing
 open System.IO
 open MF.ConsoleApplication
 open MF.ErrorHandling
-open MF.ErrorHandling.AsyncResult.Operators
 open MF.Utils
 
 type private DomainImage = MF.ImageManager.File
@@ -103,24 +102,3 @@ module ImageComparator =
                         yield diff, [images[a]; images[b]]
         }
         |> Seq.toList
-
-[<Serializable>]
-type ImagesWithHashList (images: ImageWithHash list) =
-    member __.Images() = images
-
-[<RequireQualifiedAccess>]
-module ImagesWithHashList =
-    let serialize path images =
-        use stream = File.Open(path, FileMode.Create)
-        let bformatter = Runtime.Serialization.Formatters.Binary.BinaryFormatter()
-        // todo - fix obsolete code
-        bformatter.Serialize(stream, ImagesWithHashList(images))
-
-    let deserialize path =
-        if File.Exists path then
-            use stream = File.Open(path, FileMode.Open)
-            let bformatter = Runtime.Serialization.Formatters.Binary.BinaryFormatter()
-            match bformatter.Deserialize(stream) with
-            | :? ImagesWithHashList as image -> Some <| image.Images()
-            | _ -> None
-        else None
