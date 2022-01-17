@@ -4,36 +4,45 @@ namespace MF.ImageManager
 module Finder =
     open System
     open System.IO
+    open Microsoft.Extensions.Logging
     open MF.ConsoleApplication
     open MF.Utils
     open MF.Utils.Progress
     open MF.ErrorHandling
 
-    let createFile output loggerFactory ffmpeg prefix file = asyncResult {
-        let! fileType = file |> FileType.determine |> Result.ofOption (PrepareError.NotImageOrVideo file) |> AsyncResult.ofResult
+    let createFile output (loggerFactory: ILoggerFactory) ffmpeg prefix file =
+        match file |> FileType.determine with
+        | Some fileType ->
+            asyncResult {
+                let! (metadata: Map<MetaAttribute, string>) =
+                    fileType
+                    |> MetaData.find output loggerFactory ffmpeg
 
-        let! (metadata: Map<MetaAttribute, string>) =
-            fileType
-            |> MetaData.find output loggerFactory ffmpeg
+                let hash =
+                    if metadata.IsEmpty then None   // todo - poresit
+                    else Hash.calculate fileType metadata |> Some
 
-        let hash =
-            if metadata.IsEmpty then None   // todo - poresit
-            else Hash.calculate fileType metadata |> Some
+                return Some {
+                    Type = fileType
+                    Hash = hash
+                    Name =
+                        let originalName = file |> Path.GetFileName
 
-        return {
-            Type = fileType
-            Hash = hash
-            Name =
-                let originalName = file |> Path.GetFileName
+                        match prefix with
+                        | Some (Prefix prefix) -> prefix + originalName
+                        | _ -> originalName
 
-                match prefix with
-                | Some (Prefix prefix) -> prefix + originalName
-                | _ -> originalName
+                    FullPath = file |> Path.GetFullPath
+                    Metadata = metadata
+                }
+            }
+        | _ ->
+            asyncResult {
+                let logger = loggerFactory.CreateLogger("Finder")
+                logger.LogWarning("File {file} is not image nor video (based on extension).", file)
 
-            FullPath = file |> Path.GetFullPath
-            Metadata = metadata
-        }
-    }
+                return None
+            }
 
     let findAllFilesInDir output loggerFactory ffmpeg prefix dir = asyncResult {
         output.Message $"Searching all images in <c:cyan>{dir}</c>"
@@ -59,7 +68,7 @@ module Finder =
             |> AsyncResult.handleMultipleResults output PrepareError.Exception
             |> AsyncResult.tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> images with metadata" >> output.Message)
 
-        return files
+        return files |> List.choose id
     }
 
     let findAllFilesInSource output loggerFactory ffmpeg prefix source =

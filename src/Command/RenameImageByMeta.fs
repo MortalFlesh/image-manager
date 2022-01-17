@@ -269,7 +269,6 @@ module RenameImageByMeta =
                 |> List.iter (function
                     | PrepareError.Exception e -> output.Error e.Message
                     | PrepareError.ErrorMessage message -> output.Error message
-                    | PrepareError.NotImageOrVideo path -> output.Error $"File {path} is not an image or a video."
                 )
 
                 ExitCode.Error

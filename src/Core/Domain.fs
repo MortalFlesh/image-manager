@@ -7,14 +7,12 @@ open MF.Utils
 type PrepareError =
     | Exception of exn
     | ErrorMessage of string
-    | NotImageOrVideo of string
 
 [<RequireQualifiedAccess>]
 module PrepareError =
     let format = function
         | PrepareError.Exception e -> e.Message
         | PrepareError.ErrorMessage e -> e
-        | PrepareError.NotImageOrVideo path -> $"File {path} is not an image or a video."
 
 type TargetDirMode =
     | Override
@@ -82,6 +80,18 @@ module Video =
 
     let extensions = formats |> Set.map (String.toLower >> (+) ".")
 
+[<RequireQualifiedAccess>]
+module Image =
+    /// https://en.wikipedia.org/wiki/Video_file_format
+    let formats = Set [
+        "gif"
+        "jpg"; "jpeg"
+        "png"
+        "bmp"
+    ]
+
+    let extensions = formats |> Set.map (String.toLower >> (+) ".")
+
 type FileType =
     | Image of string
     | Video of string
@@ -90,11 +100,17 @@ type FileType =
 module FileType =
     open System.IO
 
-    let determine = function
-        | null | "" -> None
-        | wierdFile when wierdFile |> Path.HasExtension |> not -> None
-        | video when video |> Path.GetExtension |> String.toLower |> Video.extensions.Contains -> Some (Video video)
-        | image -> Some (Image image)
+    let determine (path: string) =
+        let extension = path |> Path.GetExtension |> String.toLower
+
+        match path, extension with
+        | null, _ | "", _
+        | _, null | _, "" -> None
+
+        | video, extension when extension |> Video.extensions.Contains -> Some (Video video)
+        | image, extension when extension |> Image.extensions.Contains -> Some (Image image)
+
+        | _ -> None
 
 type Hash = Hash of string
 
