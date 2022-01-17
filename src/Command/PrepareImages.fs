@@ -6,6 +6,7 @@ open MF.ErrorHandling
 open MF.ImageManager
 open MF.ImageManager.Prepare
 open MF.Utils
+open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module PrepareCommand =
@@ -108,11 +109,16 @@ module PrepareCommand =
             output.Section <| sprintf "Prepare images to %s" config.Target
             output.Message <| sprintf "From:\n - %s" (config.Source |> String.concat "\n - ")
 
-            let ignoreWarnings = false
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create
 
             return!
                 config
-                |> Prepare.prepareForSorting output ignoreWarnings
+                |> Prepare.prepareForSorting output loggerFactory
         }
         |> Async.RunSynchronously
         |> function

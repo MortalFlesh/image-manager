@@ -8,6 +8,7 @@ open MF.ErrorHandling
 open MF.ImageManager
 open MF.Utils
 open MF.Utils.Progress
+open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module RenameImageByMeta =
@@ -68,9 +69,7 @@ module RenameImageByMeta =
         Argument.required "target" "Directory with images."
     ]
 
-    let options = [
-        Option.noValue "ignore-warnings" None "Whether to ignore warnings for invalid metadata of the file."
-    ]
+    let options = []
 
     [<RequireQualifiedAccess>]
     module private File =
@@ -96,10 +95,10 @@ module RenameImageByMeta =
             File.Move(oldImage.FullPath, newImage.FullPath, false)
         }
 
-    let private run output ignoreWarnings (config: Config) target = asyncResult {
+    let private run output loggerFactory (config: Config) target = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output ignoreWarnings FFMpeg.empty None
+            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
 
         output.NewLine()
 
@@ -209,12 +208,14 @@ module RenameImageByMeta =
 
             let target = input |> Input.getArgumentValue "target"
 
-            let ignoreWarnings =
-                match input with
-                | Input.HasOption "ignore-warnings" _ -> true
-                | _ -> false
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create
 
-            return! target |> run output ignoreWarnings config
+            return! target |> run output loggerFactory config
         }
         |> Async.RunSynchronously
         |> function

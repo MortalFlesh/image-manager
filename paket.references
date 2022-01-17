@@ -4,3 +4,5 @@ MF.ConsoleApplication
 MetadataExtractor
 MediaToolkit.NetCore
 System.Drawing.Common
+Microsoft.Extensions.Logging
+Microsoft.Extensions.Logging.Console

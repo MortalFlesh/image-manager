@@ -214,3 +214,30 @@ module Crc32 =
 
     //CRC32 from ASCII string
     let crc32OfString = crc32OfAscii >> sprintf "%x"
+
+module internal Logging =
+    open Microsoft.Extensions.Logging
+
+    [<RequireQualifiedAccess>]
+    module LogLevel =
+        let private normalizeString (string: string) =
+            string.Trim().ToLowerInvariant()
+
+        let parse = normalizeString >> function
+            | "trace" | "vvv" -> LogLevel.Trace
+            | "debug" | "vv" -> LogLevel.Debug
+            | "information" | "v" | "normal" -> LogLevel.Information
+            | "warning" -> LogLevel.Warning
+            | "error" -> LogLevel.Error
+            | "critical" -> LogLevel.Critical
+            | "quiet" | "q" | _ -> LogLevel.None
+
+    [<RequireQualifiedAccess>]
+    module LoggerFactory =
+        let create level =
+            LoggerFactory.Create(fun builder ->
+                builder
+                    .SetMinimumLevel(level)
+                    .AddConsole(fun c -> c.LogToStandardErrorThreshold <- LogLevel.Error)
+                |> ignore
+            )

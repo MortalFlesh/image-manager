@@ -9,12 +9,12 @@ module Finder =
     open MF.Utils.Progress
     open MF.ErrorHandling
 
-    let createFile output ignoreWarnings ffmpeg prefix file = asyncResult {
+    let createFile output loggerFactory ffmpeg prefix file = asyncResult {
         let! fileType = file |> FileType.determine |> Result.ofOption (PrepareError.NotImageOrVideo file) |> AsyncResult.ofResult
 
         let! (metadata: Map<MetaAttribute, string>) =
             fileType
-            |> MetaData.find output ignoreWarnings ffmpeg
+            |> MetaData.find output loggerFactory ffmpeg
 
         let hash =
             if metadata.IsEmpty then None   // todo - poresit
@@ -35,7 +35,7 @@ module Finder =
         }
     }
 
-    let findAllFilesInDir output ignoreWarnings ffmpeg prefix dir = asyncResult {
+    let findAllFilesInDir output loggerFactory ffmpeg prefix dir = asyncResult {
         output.Message $"Searching all images in <c:cyan>{dir}</c>"
 
         let! (files: string list) =
@@ -50,7 +50,7 @@ module Finder =
             files
             |> tee (List.length >> sprintf "  ├──> found <c:magenta>%i</c> files, <c:yellow>parallely checking metadata ...</c>" >> output.Message)
             |> List.map (
-                createFile output ignoreWarnings ffmpeg prefix
+                createFile output loggerFactory ffmpeg prefix
                 >> AsyncResult.tee (ignore >> progress.Advance)
             )
 
@@ -62,10 +62,10 @@ module Finder =
         return files
     }
 
-    let findAllFilesInSource output ignoreWarnings ffmpeg prefix source =
+    let findAllFilesInSource output loggerFactory ffmpeg prefix source =
         source
         |> List.distinct
-        |> List.map (findAllFilesInDir output ignoreWarnings ffmpeg prefix)
+        |> List.map (findAllFilesInDir output loggerFactory ffmpeg prefix)
         |> AsyncResult.ofSequentialAsyncResults (PrepareError.Exception >> List.singleton)
         |> AsyncResult.map List.concat
         |> AsyncResult.mapError List.concat

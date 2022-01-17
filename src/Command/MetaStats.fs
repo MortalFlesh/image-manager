@@ -3,7 +3,8 @@ namespace MF.ImageManager.Command
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
-open MF.Utils.Utils
+open MF.Utils
+open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module MetaStatsCommand =
@@ -15,10 +16,10 @@ module MetaStatsCommand =
         Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
     ]
 
-    let private run output ignoreWarnings ffmpeg target = asyncResult {
+    let private run output loggerFactory ffmpeg target = asyncResult {
         let! files =
             target
-            |> Finder.findAllFilesInDir output ignoreWarnings ffmpeg None
+            |> Finder.findAllFilesInDir output loggerFactory ffmpeg None
 
         files
         |> List.groupBy File.model
@@ -106,9 +107,14 @@ module MetaStatsCommand =
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
-            let ignoreWarnings = false
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create
 
-            return! target |> run output ignoreWarnings ffmpeg
+            return! target |> run output loggerFactory ffmpeg
         }
         |> Async.RunSynchronously
         |> function

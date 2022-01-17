@@ -2,6 +2,7 @@ namespace MF.ImageManager.Prepare
 
 module Prepare =
     open System.IO
+    open Microsoft.Extensions.Logging
     open MF.ImageManager
     open MF.ConsoleApplication
     open MF.Utils
@@ -61,12 +62,12 @@ module Prepare =
 
         output.NewLine()
 
-    let prepareForSorting output ignoreWarnings config = asyncResult {
+    let prepareForSorting output (loggerFactory: ILoggerFactory) config = asyncResult {
         config.Target |> Directory.ensure
 
         output.NewLine()
         output.SubTitle "Find all files in source"
-        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output ignoreWarnings config.Ffmpeg config.Prefix
+        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output loggerFactory config.Ffmpeg config.Prefix
         output.NewLine()
 
         output.SubTitle "Exclude files from source by excluded dirs"

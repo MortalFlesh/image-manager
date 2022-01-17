@@ -8,6 +8,7 @@ open MF.ImageManager
 open MF.ImageManager.Prepare
 open MF.Utils
 open MF.Utils.Progress
+open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module FindSameImages =
@@ -139,10 +140,10 @@ module FindSameImages =
                 )
             )
 
-    let private run output ignoreWarnings cache copyTo target = asyncResult {
+    let private run output loggerFactory cache copyTo target = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output ignoreWarnings FFMpeg.empty None
+            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
             <@> List.map PrepareError.format
 
         if output.IsVeryVerbose() then
@@ -190,8 +191,6 @@ module FindSameImages =
                     failwithf "Output dir %A does NOT exists." dir
             )
 
-            let ignoreWarnings = true
-
             // todo - asi odstranit cache
             // todo - moznost pridat dalsi slozku (pak pustit 20XX + roztridit, ...)
 
@@ -201,7 +200,14 @@ module FindSameImages =
             // let cache = FromFile "hashCache.hshlib"
             let cache = NoCache
 
-            return! target |> run output ignoreWarnings cache (outputDir, pathPart)
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create
+
+            return! target |> run output loggerFactory cache (outputDir, pathPart)
         }
         |> Async.RunSynchronously
         |> function

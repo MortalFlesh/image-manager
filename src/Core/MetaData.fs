@@ -4,6 +4,7 @@ namespace MF.ImageManager
 module MetaData =
     open System
     open System.Collections.Generic
+    open Microsoft.Extensions.Logging
     open MF.ErrorHandling
     open MF.ConsoleApplication
     open MF.Utils
@@ -22,7 +23,7 @@ module MetaData =
                 )
                 |> Option.map (fun value -> tag, value)
 
-            let forImage output ignoreWarnings wanted (file: string) =
+            let forImage (logger: ILogger) wanted (file: string) =
                 try
                     let meta = file |> ImageMetadataReader.ReadMetadata
 
@@ -35,9 +36,7 @@ module MetaData =
 
                     wanted |> List.choose (tryFind meta)
                 with e ->
-                    if not ignoreWarnings then
-                        output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
-                    if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
+                    logger.LogWarning("File {file} could not be parsed due to {error}.", file, e)
                     []
 
         module private VideoMeta =
@@ -50,7 +49,7 @@ module MetaData =
                 | true, value -> Some (name, value)
                 | _ -> None
 
-            let forVideo output ignoreWarnings ffmpeg wanted path = asyncResult {
+            let forVideo output (logger: ILogger) ffmpeg wanted path = asyncResult {
                 try
                     match ffmpeg with
                     | FFMpeg.OnOther | FFMpeg.Empty -> return []
@@ -81,9 +80,7 @@ module MetaData =
                                 wanted |> List.choose (tryFind tags)
                             | _ -> []
                 with e ->
-                    if not ignoreWarnings then
-                        output.Error <| sprintf "[Warning] Video metadata for %s could not be get due to: %s" path e.Message
-                    if output.IsVerbose() then output.Error <| sprintf "%A\n" e
+                    logger.LogWarning("Video metadata for {file} could not be get due to {error}.", path, e)
                     return []
             }
 
@@ -94,19 +91,20 @@ module MetaData =
     module private DateTimeOriginal =
         open MetadataExtractor
 
-        let tryParse output file (tag: Tag) =
+        let tryParse (logger: ILogger) file (tag: Tag) =
             try tag.Description |> DateTime.parseExifDateTime
             with e ->
-                output.Error <| sprintf "[Warning] File %s could not be parsed due to %A." file e.Message
-                if output.IsVerbose() then output.Error <| sprintf "Error:\n%A" e
+                logger.LogWarning("File {file} could not be parsed due to {error}", file, e)
                 None
 
-    let find output ignoreWarnings ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
+    let find output (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
         let! parsedMetadata =
             match file with
             | Image file ->
+                let logger = loggerFactory.CreateLogger("MetaData.Image")
+
                 file
-                |> Meta.forImage output ignoreWarnings [
+                |> Meta.forImage logger [
                     "Exif SubIFD", "Date/Time Original"
                     "Exif IFD0", "Model"
                     "GPS", "GPS Latitude"
@@ -116,7 +114,7 @@ module MetaData =
                 |> List.choose (function
                     | MetaAttribute.KeyCreatedAt, value ->
                         value
-                        |> DateTimeOriginal.tryParse output file
+                        |> DateTimeOriginal.tryParse logger file
                         |> Option.map (fun createdAt -> CreatedAt, string createdAt)
                     | MetaAttribute.KeyModel, value -> Some (Model, value.Description)
                     | MetaAttribute.KeyGpsLatitude, value -> Some (GpsLatitude, value.Description)
@@ -130,7 +128,7 @@ module MetaData =
                 asyncResult {
                     let! meta =
                         file
-                        |> Meta.forVideo output ignoreWarnings ffmpeg [
+                        |> Meta.forVideo output (loggerFactory.CreateLogger("MetaData.Video")) ffmpeg [
                             "creation_time"; "com.apple.quicktime.creationdate"
                             "model"; "com.apple.quicktime.model"
                             "location"; "com.apple.quicktime.location.ISO6709"
