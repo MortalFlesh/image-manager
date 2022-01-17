@@ -3,9 +3,9 @@ namespace MF.ImageManager.Command
 open System
 open System.IO
 open Microsoft.Extensions.Logging
-open FSharp.Data
 open MF.ConsoleApplication
 open MF.ErrorHandling
+open MF.ErrorHandling.AsyncResult.Operators
 open MF.ImageManager
 open MF.Utils
 open MF.Utils.Progress
@@ -13,64 +13,11 @@ open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module RenameImageByMeta =
-    type private ConfigSchema = JsonProvider<".dist.rename.json">
-
-    type Config = {
-        Rename: RenameDefinition list
-    }
-
-    and RenameDefinition = {
-        Prefix: string
-        Conditions: MetaCondition list
-    }
-
-    and MetaCondition =
-        | IsModel of string
-
-        with
-            /// Checks whether the metadata map contains a value which meets the condition
-            member this.Meets(metadata: Map<MetaAttribute, string>) =
-                match this with
-                | IsModel model -> metadata |> Map.tryFind Model = Some model
-
     type ExecuteMode =
         | DryRun
         | Execute
 
-    [<RequireQualifiedAccess>]
-    module private Config =
-        let parse path =
-            let config =
-                path
-                |> File.ReadAllText
-                |> ConfigSchema.Parse
-
-            {
-                Rename =
-                    config
-                    |> Seq.choose (fun item ->
-                        let conditions =
-                            item.Meta
-                            |> Seq.choose (fun meta ->
-                                match meta.Model with
-                                | null | "" -> None
-                                | model -> Some (IsModel model)
-                            )
-                            |> Seq.toList
-
-                        match conditions with
-                        | [] -> None
-                        | conditions ->
-                            Some {
-                                Prefix = item.Prefix
-                                Conditions = conditions
-                            }
-                    )
-                    |> Seq.toList
-            }
-
     let arguments = [
-        Argument.required "config" "Path to configuration file."
         Argument.required "target" "Directory with images."
     ]
 
@@ -78,49 +25,59 @@ module RenameImageByMeta =
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and images will only be sent to stdout."
     ]
 
-    [<RequireQualifiedAccess>]
-    type RenameFile =
-        | Original of File
-        | Renamed of File
+    type RenameFile = {
+        Original: File
+        Renamed: File
+    }
 
-        with
-            member this.Name =
-                match this with
-                | Original i
-                | Renamed i -> i.Name
+    type RenameError =
+        | PrepareError of PrepareError
+        | NoMetadata of File
+        | RenameIsAllowedForOriginalAndRenamedFileOnly of (RenameFile * RenameFile)
+        | RuntimeError of exn
+
+    [<RequireQualifiedAccess>]
+    module RenameError =
+        let format = function
+            | PrepareError e -> PrepareError.format e
+            | NoMetadata file -> $"File {file.FullPath} has no metadata"
+            | RenameIsAllowedForOriginalAndRenamedFileOnly files -> $"You must replace old image with a new one. You sent {files}."
+            | RuntimeError e -> $"Renaming ends with runtime error {e}"
 
     [<RequireQualifiedAccess>]
     module private File =
-        let (|IsMatching|_|) (condition: MetaCondition) (image: File) =
-            match image with
-            | { Metadata = metadata } when condition.Meets metadata -> Some IsMatching
-            | _ -> None
+        let convertToHash: File -> _ = function
+            | { Name = Hashed _ } -> None
+            | { Name = Normal name; Type = fileType } as file ->
+                Some (asyncResult {
+                    let! metadata =
+                        file
+                        |> FileMetadata.load
+                        |> Result.mapError PrepareError
 
-        let isMathing condition = function
-            | IsMatching condition -> true
-            | _ -> false
+                    if metadata.IsEmpty then
+                        return! AsyncResult.ofError (NoMetadata file)
 
-        let addPrefix prefix (image: File) =
-            let prefixedName = $"{prefix}{image.Name}"
+                    let hash = Hash.calculate fileType metadata
+                    let extension = name |> Path.GetExtension |> Extension
+                    let hashName = $"{hash}.{extension}"
 
-            { image
-                with
-                    Name = prefixedName
-                    FullPath = image.FullPath.Replace(image.Name, prefixedName)
-            }
+                    return {
+                        file
+                            with
+                                Name = Hashed (hash, extension)
+                                FullPath = file.FullPath.Replace(name, hashName)
+                    }
+                })
 
-        let replace (files: RenameFile * RenameFile) = asyncResult {
-            match files with
-            | RenameFile.Original oldImage, RenameFile.Renamed newImage
-            | RenameFile.Renamed newImage, RenameFile.Original oldImage
-                -> return File.Move(oldImage.FullPath, newImage.FullPath, false)
-            | _ -> return! AsyncResult.ofError $"You must replace old image with a new one. You sent {files}."
+        let replace { Original = original; Renamed = renamed } = async {
+            File.Move(original.FullPath, renamed.FullPath, false)
         }
 
-    let private run output loggerFactory (config: Config) executeMode target = asyncResult {
+    let private run output loggerFactory executeMode target: AsyncResult<string, RenameError list> = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
+            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty <@> List.map PrepareError
 
         output.NewLine()
 
@@ -133,116 +90,88 @@ module RenameImageByMeta =
             |> output.Table [ "Model"; "Count" ]
             |> output.NewLine
 
-        let prefixByModelTable =
-            config.Rename
-            |> List.collect (fun rename ->
-                rename.Conditions
-                |> List.map (function
-                    | IsModel model -> model, rename.Prefix
-                )
-            )
-            |> Map.ofList
+        output.Message $"Rename files in <c:cyan>{target}</c> ..."
 
-        output.Message $"Renaming images in <c:cyan>{target}</c> by metadata"
-
-        let renameImagesProgress = new Progress(output, "Rename images")
-
-        let renames =
-            let logger = loggerFactory.CreateLogger("Rename")
+        let! (preparedRenames: RenameFile list) =
+            let logger = loggerFactory.CreateLogger("Prepare renaming files")
             use prepareRenamesProgress = new Progress(output, "Prepare renames")
 
             images
-            |> tee (List.length >> sprintf "  ├──> Choosing images[<c:magenta>%i</c>] to rename ..." >> output.Message)
+            |> tee (List.length >> sprintf "  ├──> <c:yellow>Prepare files</c>[<c:magenta>%i</c>] to rename ..." >> output.Message)
             |> tee (List.length >> prepareRenamesProgress.Start)
             |> List.choose (fun image ->
                 maybe {
-                    let! imageTakenBy = image |> File.model
-                    let! prefix = prefixByModelTable |> Map.tryFind imageTakenBy
-
-                    if image.Name.StartsWith prefix then
-                        // skip images, which already has a prefix
-                        return! None
+                    let! convertToHash = image |> File.convertToHash
 
                     return
                         asyncResult {
-                            let renamedImage =
-                                image
-                                |> File.addPrefix prefix
-                                |> RenameFile.Renamed
+                            let! hashedImage = convertToHash
 
-                            match executeMode with
-                            | DryRun ->
-                                output.Message $"  ├──> Rename image <c:cyan>{image.Name}</c> to <c:yellow>{renamedImage.Name}</c>"
-                            | Execute ->
-                                do!
-                                    (RenameFile.Original image, renamedImage)
-                                    |> File.replace
-
-                            return prefix, imageTakenBy
+                            return Some {
+                                Original = image
+                                Renamed = hashedImage
+                            }
                         }
-                        |> AsyncResult.mapError (fun e -> prefix, imageTakenBy, e)
-                        |> AsyncResult.tee (ignore >> renameImagesProgress.Advance)
-                        |> AsyncResult.teeError ((fun e -> logger.LogError("Rename image {image} failed with {error}", e)) >> renameImagesProgress.Advance)
+                        >>- (function
+                            | NoMetadata file ->
+                                logger.LogWarning("File {file} has no metadata.", file)
+                                AsyncResult.ofSuccess None
+                            | error -> AsyncResult.ofError error
+                        )
                 }
-                |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├──> Renaming image <c:cyan>{image.Name}</c> is <c:dark-yellow>skipped</c>.")
+                |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├────> Renaming file <c:cyan>{image.Name |> FileName.value}</c> is <c:dark-yellow>skipped</c>.")
                 |> tee (ignore >> prepareRenamesProgress.Advance)
             )
+            |> AsyncResult.handleMultipleResults output RuntimeError
+            <!> List.choose id
 
-        let handle =
-            if output.IsDebug()
-            then Async.Sequential
-            else Async.Parallel
+        let (analyzedRenames: RenameFile list) =
+            use analyzeFiles = new Progress(output, "Analyze files")
 
-        let results =
-            renames
-            |> tee (List.length >> sprintf "  ├──> Renaming images[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
-            |> tee (List.length >> renameImagesProgress.Start)
-            |> handle
-            |> Async.RunSynchronously
-            |> tee (ignore >> renameImagesProgress.Finish)
-            |> tee (Seq.length >> sprintf "  └──> Renaming images[<c:magenta>%i</c>] finished." >> output.Message)
+            preparedRenames
+            |> tee (List.length >> sprintf "  ├──> <c:yellow>Analyze files</c>[<c:magenta>%i</c>] before renaming ..." >> output.Message)
+            |> tee (List.length >> analyzeFiles.Start)
+            |> List.choose (fun toRename ->
+                analyzeFiles.Advance()
+                Some toRename
+            )   // todo analyze
+            // todo - check duplicities
+            // - pokud tam je, tak kouknout ktery je vetsi a ten pouzit a zalogovat ten druhy
+            // |> AsyncResult.handleMultipleResults output RuntimeError
 
-        results
-        |> Seq.choose (function
-            | Ok renamed -> Some renamed
-            | Error _ -> None
-        )
-        |> Seq.countBy id
-        |> Seq.map (fun ((prefix, takenBy), count) -> [ prefix; takenBy; string count ])
-        |> Seq.toList
-        |> output.Table [ "Prefix"; "Model"; "Count" ]
+        // todo - analyza -> zkontrolovat v ramci "proslych souboru" ze tam nejsou duplicity, pripadne ze se uz na te vysledne fullPath nevyskytuji
+        // pokud bude nejaky konflikt, tak poresit
+        // - zkontrolovat treba contentHash tech duplicit
+        // - zkontrolovat velikost (vybrat pak ten vetsi)
+        // - pripadne kdyz bude vsechno stejne, tak proste vybrat jen jeden
+        // - jinak aspon zalogovat a treba i neprejmenovavat
 
-        let errors =
-            results
-            |> Seq.choose (function
-                | Ok _ -> None
-                | Error error -> Some error
+        let! results =
+            let logger = loggerFactory.CreateLogger("Rename files")
+            use renameFiles = new Progress(output, "Rename files")
+
+            analyzedRenames
+            |> List.map (fun toRename ->
+                asyncResult {
+                    match executeMode with
+                    | DryRun -> output.Message $"  ├────> Rename image <c:cyan>{toRename.Original.Name |> FileName.value}</c> to <c:yellow>{toRename.Renamed.Name |> FileName.value}</c>"
+                    | Execute -> do! toRename |> File.replace
+                }
+                <@> RuntimeError
+                |> AsyncResult.tee renameFiles.Advance
+                |> AsyncResult.teeError ((fun e -> logger.LogError("Rename image {image} failed with {error}", toRename, e)) >> renameFiles.Advance)
             )
-            |> Seq.toList
+            |> tee (List.length >> sprintf "  ├──> <c:yellow>Renaming images</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
+            |> tee (List.length >> renameFiles.Start)
+            |> AsyncResult.handleMultipleResults output RuntimeError
 
-        match errors with
-        | [] -> ()
-        | errors ->
-            errors
-            |> List.countBy (fun (prefix, model, _) -> prefix, model)
-            |> List.map (fun ((prefix, takenBy), count) -> [ prefix; takenBy; string count ])
-            |> output.Table [ "Prefix"; "Model"; "Error" ]
-            |> output.NewLine
-
-            errors
-            |> List.map (fun (prefix, takenBy, error) -> $"{prefix} ({takenBy}): {error}\n")
-            |> Errors.show output
+        results |> Seq.length |> sprintf "  └──> Renaming images[<c:magenta>%i</c>] finished." |> output.Message
 
         return "Done"
     }
 
     let execute ((input, output): IO) =
         asyncResult {
-            let config =
-                input
-                |> Input.getArgumentValue "config"
-                |> Config.parse
-
             let executeMode =
                 match input with
                 | Input.IsSetOption "dry-run" _ -> DryRun
@@ -257,18 +186,17 @@ module RenameImageByMeta =
                 |> LogLevel.parse
                 |> LoggerFactory.create "RenameByMeta"
 
-            return! target |> run output loggerFactory config executeMode
+            return! target |> run output loggerFactory executeMode
         }
+        |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously
         |> function
-            | Ok message ->
-                output.Success message
+            | Ok msg ->
+                output.Success msg
                 ExitCode.Success
             | Error errors ->
                 errors
-                |> List.iter (function
-                    | PrepareError.Exception e -> output.Error e.Message
-                    | PrepareError.ErrorMessage message -> output.Error message
-                )
+                |> List.map RenameError.format
+                |> Errors.show output
 
                 ExitCode.Error

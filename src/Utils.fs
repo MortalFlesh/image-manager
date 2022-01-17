@@ -178,6 +178,13 @@ module AsyncResult =
         if output.IsDebug() then AsyncResult.ofSequentialAsyncResults
         else AsyncResult.ofParallelAsyncResults
 
+    let waitAfterFinish (output: MF.ConsoleApplication.Output) sleepFor ar = asyncResult {
+        let! result = ar
+        output.Message "Waiting ..."
+        do! AsyncResult.sleep sleepFor
+        return result
+    }
+
 /// https://titanwolf.org/Network/Articles/Article?AID=9c8c1045-c819-4827-84c6-9c9977a63bdc
 module Crc32 =
     open System

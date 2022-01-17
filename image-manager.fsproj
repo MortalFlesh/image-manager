@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="src/ErrorHandling/Result.fs" />
     <Compile Include="src/ErrorHandling/Option.fs" />
+    <Compile Include="src/Core/Cache.fs" />
 
     <Compile Include="src/Utils.fs" />
   </ItemGroup>

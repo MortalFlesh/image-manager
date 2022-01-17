@@ -1,6 +1,7 @@
 namespace MF.ImageManager
 
 open System
+open MF.ErrorHandling
 open MF.Utils
 
 [<RequireQualifiedAccess>]
@@ -78,7 +79,10 @@ module Video =
         "flv"; "f4v"; "f4p"; "f4a"; "f4b"
     ]
 
-    let extensions = formats |> Set.map (String.toLower >> (+) ".")
+    let private extensions = formats |> Set.map (String.toLower >> (+) ".")
+
+    let isVideoExtension extension =
+        extension |> String.toLower |> extensions.Contains
 
 [<RequireQualifiedAccess>]
 module Image =
@@ -90,7 +94,10 @@ module Image =
         "bmp"
     ]
 
-    let extensions = formats |> Set.map (String.toLower >> (+) ".")
+    let private extensions = formats |> Set.map (String.toLower >> (+) ".")
+
+    let isImageExtension extension =
+        extension |> String.toLower |> extensions.Contains
 
 type FileType =
     | Image of string
@@ -107,20 +114,51 @@ module FileType =
         | null, _ | "", _
         | _, null | _, "" -> None
 
-        | video, extension when extension |> Video.extensions.Contains -> Some (Video video)
-        | image, extension when extension |> Image.extensions.Contains -> Some (Image image)
+        | video, extension when extension |> Video.isVideoExtension -> Some (Video video)
+        | image, extension when extension |> Image.isImageExtension -> Some (Image image)
 
         | _ -> None
 
 type Hash = Hash of string
+type Extension = Extension of string
+
+type FileName =
+    | Hashed of Hash * Extension
+    | Normal of string
+
+[<RequireQualifiedAccess>]
+type FileMetadata =
+    | Lazy of AsyncResult<Map<MetaAttribute, string>, PrepareError>
 
 type File = {
     Type: FileType
-    Name: string
-    Hash: Hash option
+    Name: FileName
     FullPath: string
-    Metadata: Map<MetaAttribute, string>
+    Metadata: FileMetadata
 }
+
+[<RequireQualifiedAccess>]
+module FileMetadata =
+    open MF.Utils.ConcurrentCache
+
+    type private FullPath = FullPath of string
+    type private Metadata = Map<MetaAttribute, string>
+
+    let private cache: Cache<FullPath, Metadata> = Cache.empty()
+
+    let load (file: File) =
+        match file.Metadata with
+        | FileMetadata.Lazy load ->
+            let key = Key (FullPath file.FullPath)
+
+            match cache |> Cache.tryFind key with
+            | Some cached -> Ok cached
+            | _ ->
+                match load |> Async.RunSynchronously with
+                | Ok fresh ->
+                    cache |> Cache.set key fresh
+                    Ok fresh
+                | Error e -> Error e
 
 [<RequireQualifiedAccess>]
 module private Crypt =
@@ -197,6 +235,28 @@ module Hash =
         ]
         |> Hash
 
+    let tryParse = function
+        | null | "" -> None
+        | Regex @"^([i|v])(_.*)\.(.*?)$" [ prefix; hash; extension ] ->
+            match prefix with
+            | "i" when extension |> Image.isImageExtension -> Some (Hash $"{prefix}{hash}", Extension extension)
+            | "v" when extension |> Video.isVideoExtension -> Some (Hash $"{prefix}{hash}", Extension extension)
+            | _ -> None
+        | _ -> None
+
+[<RequireQualifiedAccess>]
+module FileName =
+    let value = function
+        | Hashed (Hash hash, Extension extension) -> $"{hash}.{extension}"
+        | Normal name -> name
+
+    let tryParse = function
+        | null | "" -> None
+        | name ->
+            match name |> Hash.tryParse with
+            | Some name -> Some (Hashed name)
+            | _ -> Some (Normal name)
+
 [<RequireQualifiedAccess>]
 module MetaAttribute =
     let [<Literal>] KeyCreatedAt = "Date/Time Original"
@@ -220,11 +280,23 @@ module MetaAttribute =
 module File =
     let name { Name = name } = name
     let path { FullPath = path } = path
-    let hash { Hash = hash } = hash
 
-    let createdAtRaw { Metadata = metaData } = metaData.TryFind CreatedAt
-    let createdAtDateTime = createdAtRaw >> Option.bind DateTime.parseExifDateTime
-    let model { Metadata = metaData } = metaData.TryFind Model
+    let hash = name >> (function
+        | Hashed (hash, _) -> Some hash
+        | _ -> None
+    )
+
+    let private metaData = FileMetadata.load
+    let private tryMetaData = metaData >> Result.toOption
+
+    let createdAtRaw: File -> string option =
+        tryMetaData >> Option.bind (Map.tryFind CreatedAt)
+
+    let createdAtDateTime: File -> DateTime option =
+        createdAtRaw >> Option.bind DateTime.parseExifDateTime
+
+    let model: File -> string option =
+        tryMetaData >> Option.bind (Map.tryFind Model)
 
 [<RequireQualifiedAccess>]
 type FFMpeg =

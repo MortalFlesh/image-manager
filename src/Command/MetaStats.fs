@@ -19,7 +19,7 @@ module MetaStatsCommand =
     let private run output loggerFactory ffmpeg target = asyncResult {
         let! files =
             target
-            |> Finder.findAllFilesInDir output loggerFactory ffmpeg None
+            |> Finder.findAllFilesInDir output loggerFactory ffmpeg
 
         files
         |> List.groupBy File.model
@@ -68,18 +68,15 @@ module MetaStatsCommand =
                     let format (k, v) =
                         $"<c:yellow>{k |> MetaAttribute.value}</c>: {v}"
 
-                    match i.Metadata |> Map.toList with
-                    | [] -> "<c:red>---</c>", []
-                    | [ one ] -> one |> format, []
-                    | first :: rest -> first |> format, rest |> List.map format
+                    match i |> FileMetadata.load |> Result.map Map.toList with
+                    | Ok [] -> "<c:red>---</c>", []
+                    | Error error -> $"<c:red>{error}</c>", []
+                    | Ok [ one ] -> one |> format, []
+                    | Ok (first :: rest) -> first |> format, rest |> List.map format
 
                 [
                     yield [
-                        $"<c:cyan>{i.Name}</c>"
-
-                        match i.Hash with
-                        | Some (Hash hash) -> $"[<c:magenta>{hash.Length}</c>] <c:dark-yellow>{hash}</c>"
-                        | _ -> $"<c:red>---</c>"
+                        $"<c:cyan>{i.Name |> FileName.value}</c>"
 
                         $"<c:gray>{i.FullPath}</c>"
                         firstMeta
@@ -116,6 +113,7 @@ module MetaStatsCommand =
 
             return! target |> run output loggerFactory ffmpeg
         }
+        |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously
         |> function
             | Ok message ->

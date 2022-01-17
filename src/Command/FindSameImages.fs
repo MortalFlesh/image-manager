@@ -22,11 +22,15 @@ module FindSameImages =
     ]
 
     let private printImage output image =
-        output.Message $"Image <c:cyan>{image.Name}</c>"
+        output.Message $"Image <c:cyan>{image.Name |> FileName.value}</c>"
         output.Message $"  <c:gray>> {image.FullPath}</c>"
 
         if output.IsVerbose() then
-            image.Metadata
+            image
+            |> FileMetadata.load
+            |> function
+                | Ok meta -> meta
+                | Error _ -> Map.empty
             |> Map.toList
             |> List.sortBy fst
             |> List.map (fun (k, v) -> [ k |> MetaAttribute.value; v ])
@@ -96,7 +100,7 @@ module FindSameImages =
 
                 items
                 |> List.iter (fun image ->
-                    let rawTarget = groupPath </> image.Name
+                    let rawTarget = groupPath </> (image.Name |> FileName.value)
                     let target = rawTarget |> checkTarget
 
                     if rawTarget <> target && output.IsVeryVerbose() then
@@ -122,7 +126,11 @@ module FindSameImages =
                                     $" - {i.Name}"
                                     $"     - {i.FullPath}"
                                     yield!
-                                        i.Metadata
+                                        i
+                                        |> FileMetadata.load
+                                        |> function
+                                            | Ok meta -> meta
+                                            | Error _ -> Map.empty
                                         |> Map.toList
                                         |> List.map (fun (k, v) -> $"     - {k |> MetaAttribute.value}: {v}")
                                 ]
@@ -143,7 +151,7 @@ module FindSameImages =
     let private run output loggerFactory copyTo target = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty None
+            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty
             <@> List.map PrepareError.format
 
         if output.IsVeryVerbose() then
@@ -202,6 +210,7 @@ module FindSameImages =
 
             return! target |> run output loggerFactory (outputDir, pathPart)
         }
+        |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously
         |> function
             | Ok message ->

@@ -4,7 +4,6 @@ open MF.ImageManager
 
 type Config = {
     Source: string list
-    Prefix: Prefix option
     Target: string
     TargetSubdirFallback: string option
     TargetDirMode: TargetDirMode
@@ -28,7 +27,6 @@ module Config =
 
         return {
             Target = ""
-            Prefix = config.Prefix |> Option.map Prefix
             Source = config.Source |> Seq.toList
             TargetSubdirFallback = config.Fallback
             TargetDirMode = targetDirMode
@@ -52,7 +50,6 @@ module Config =
         | Some defaults ->
             { defaults with
                 Target = config.Target
-                Prefix = config.Prefix |> Option.orElse defaults.Prefix
                 Source = config.Source @ defaults.Source |> List.distinct
                 TargetSubdirFallback =
                     match config.TargetSubdirFallback with

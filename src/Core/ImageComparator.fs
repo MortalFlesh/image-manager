@@ -6,6 +6,7 @@ open System.IO
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.Utils
+open MF.ImageManager
 
 type private DomainImage = MF.ImageManager.File
 
@@ -61,7 +62,7 @@ module ImageHash =
 [<RequireQualifiedAccess>]
 module ImageWithHash =
     let fromImage output (image: DomainImage) = asyncResult {
-        if output.IsDebug() then output.Message $"Generating hash for <c:yellow>{image.Name}</c>"
+        if output.IsDebug() then output.Message $"Generating hash for <c:yellow>{image.Name |> FileName.value}</c>"
 
         try
             // this works on Windows platform only

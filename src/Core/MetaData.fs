@@ -98,6 +98,9 @@ module MetaData =
                 None
 
     let find output (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
+        if output.IsDebug() then
+            output.Message $"<c:dark-yellow>[Debug]</c> Fetching metadata for <c:cyan>{file}</c> ..."
+
         let! parsedMetadata =
             match file with
             | Image file ->

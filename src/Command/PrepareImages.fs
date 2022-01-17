@@ -65,7 +65,6 @@ module PrepareCommand =
                 parsedConfig
                 |> Config.combine ({
                     Source = source
-                    Prefix = prefix
                     Target = target
                     TargetDirMode = targetDirMode
                     TargetSubdir =
@@ -93,11 +92,10 @@ module PrepareCommand =
                 })
 
             if output.IsVerbose() then
-                output.Table ["Source"; "Prefix"; "Target"; "Exclude"; "Exclude list from"; "FFMpeg"]
+                output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"; "FFMpeg"]
                     [
                         [
                             config.Source
-                            [config.Prefix |> sprintf "%A"]
                             [config.Target]
                             [config.Exclude |> sprintf "%A"]
                             config.ExcludeList |> Option.toList
@@ -120,6 +118,7 @@ module PrepareCommand =
                 config
                 |> Prepare.prepareForSorting output loggerFactory
         }
+        |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously
         |> function
             | Ok message ->

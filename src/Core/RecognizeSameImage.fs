@@ -28,15 +28,20 @@ module RecognizeSameImage =
     [<RequireQualifiedAccess>]
     module private TableItem =
         let create (image: File) =
+            let metadata =
+                image
+                |> FileMetadata.load
+                |> Result.orFail
+
             {
                 Image = image
-                CompleteHash = image.Metadata |> Map.values |> String.concat "-"
+                CompleteHash = metadata |> Map.values |> String.concat "-"
                 DateTimeOriginal = image |> File.createdAtRaw |> Option.defaultValue ""
                 Gps =
                     [
-                        image.Metadata.TryFind GpsLatitude
-                        image.Metadata.TryFind GpsLongitude
-                        image.Metadata.TryFind GpsAltitude
+                        metadata.TryFind GpsLatitude
+                        metadata.TryFind GpsLongitude
+                        metadata.TryFind GpsAltitude
                     ]
                     |> List.choose id
                     |> String.concat "-"
@@ -118,7 +123,7 @@ module RecognizeSameImage =
         if output.IsDebug() then
             imagesWithHash
             |> List.map (fun i -> [
-                i.Image.Name
+                (i.Image.Name |> FileName.value)
                 $"{i.Width}x{i.Height}"
                 (i.Hash |> ImageHash.format)
             ])
@@ -132,7 +137,7 @@ module RecognizeSameImage =
             similarTo90
             |> List.iter (fun (diff, group) ->
                 [[
-                    yield! group |> List.collect (fun i -> [$"{i.Image.Name} ({i.Image.FullPath})"; $"{i.Width}x{i.Height}"])
+                    yield! group |> List.collect (fun i -> [$"{i.Image.Name |> FileName.value} ({i.Image.FullPath})"; $"{i.Width}x{i.Height}"])
                     $"{diff} %%"
                 ]]
                 |> output.Table [ "Image 1"; "Size"; "Image 2"; "Size"; "Similarity" ]

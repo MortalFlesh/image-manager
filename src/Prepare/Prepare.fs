@@ -67,7 +67,8 @@ module Prepare =
 
         output.NewLine()
         output.SubTitle "Find all files in source"
-        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output loggerFactory config.Ffmpeg config.Prefix
+        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output loggerFactory config.Ffmpeg
+        // todo - tohle by melo celkove po prejmenovani na hashe probehnout rychleji, protoze uz by se nemely nacitat metadata, ale stacil by nazev
         output.NewLine()
 
         output.SubTitle "Exclude files from source by excluded dirs"
@@ -76,13 +77,14 @@ module Prepare =
 
         output.SubTitle "Copy files from source"
         let filesToCopy = allFilesInSource |> Finder.findFilesToCopy output excludedFiles
+        // todo - tohle pak bude fungovat, jak by melo (s tim, ze by mely vsechny soubory v excluded byt uz hashovane, to je asi treba i zkontrolovat)
 
         if output.IsVeryVerbose() then
             output.Message " * All files:"
-            output.List (allFilesInSource |> List.map File.name)
+            output.List (allFilesInSource |> List.map (File.name >> FileName.value))
 
             output.Message " * Files to copy:"
-            output.List (filesToCopy |> List.map File.name)
+            output.List (filesToCopy |> List.map (File.name >> FileName.value))
 
         filesToCopy |> copyFiles output config
 
