@@ -84,6 +84,11 @@ module Video =
     let isVideoExtension extension =
         extension |> String.toLower |> extensions.Contains
 
+type Dimensions = {
+    Height: int
+    Width: int
+}
+
 [<RequireQualifiedAccess>]
 module Image =
     /// https://en.wikipedia.org/wiki/Video_file_format
@@ -98,6 +103,17 @@ module Image =
 
     let isImageExtension extension =
         extension |> String.toLower |> extensions.Contains
+
+    open System.Drawing
+
+    let getDimensions path =
+        try
+            let img = Image.FromFile(path)
+            Ok {
+                Height = img.Height
+                Width = img.Width
+            }
+        with e -> Error e
 
 type FileType =
     | Image of string
@@ -120,7 +136,25 @@ module FileType =
         | _ -> None
 
 type Hash = Hash of string
-type Extension = Extension of string
+
+[<AutoOpen>]
+module ExtensionModule =
+    /// File extension, including a leading "."
+    type Extension = private Extension of string
+
+    [<RequireQualifiedAccess>]
+    module Extension =
+        open System.IO
+
+        let ofParsed = function
+            | null | "" -> None
+            | withoutLedingDot when withoutLedingDot.StartsWith('.') |> not -> None
+            | ext -> Some (Extension ext)
+
+        let fromPath (path: string) =
+            path |> Path.GetExtension |> Extension
+
+        let value (Extension ext) = ext
 
 type FileName =
     | Hashed of Hash * Extension
@@ -237,17 +271,27 @@ module Hash =
 
     let tryParse = function
         | null | "" -> None
-        | Regex @"^([i|v])(_.*)\.(.*?)$" [ prefix; hash; extension ] ->
+        | Regex @"^([i|v])(_.*)(\..*?)$" [ prefix; hash; extension ] ->
             match prefix with
-            | "i" when extension |> Image.isImageExtension -> Some (Hash $"{prefix}{hash}", Extension extension)
-            | "v" when extension |> Video.isVideoExtension -> Some (Hash $"{prefix}{hash}", Extension extension)
+            | "i" when extension |> Image.isImageExtension ->
+                maybe {
+                    let! extension = extension |> Extension.ofParsed
+
+                    return (Hash $"{prefix}{hash}", extension)
+                }
+            | "v" when extension |> Video.isVideoExtension ->
+                maybe {
+                    let! extension = extension |> Extension.ofParsed
+
+                    return (Hash $"{prefix}{hash}", extension)
+                }
             | _ -> None
         | _ -> None
 
 [<RequireQualifiedAccess>]
 module FileName =
     let value = function
-        | Hashed (Hash hash, Extension extension) -> $"{hash}.{extension}"
+        | Hashed (Hash hash, extension) -> $"{hash}{extension |> Extension.value}"
         | Normal name -> name
 
     let tryParse = function

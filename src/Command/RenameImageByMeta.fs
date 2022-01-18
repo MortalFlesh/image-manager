@@ -59,8 +59,8 @@ module RenameImageByMeta =
                         return! AsyncResult.ofError (NoMetadata file)
 
                     let hash = Hash.calculate fileType metadata
-                    let extension = name |> Path.GetExtension |> Extension
-                    let hashName = $"{hash}.{extension}"
+                    let extension = name |> Extension.fromPath
+                    let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
 
                     return {
                         file
@@ -126,14 +126,67 @@ module RenameImageByMeta =
             <!> List.choose id
 
         let (analyzedRenames: RenameFile list) =
+            let logger = loggerFactory.CreateLogger("Analyze files")
             use analyzeFiles = new Progress(output, "Analyze files")
 
             preparedRenames
             |> tee (List.length >> sprintf "  ├──> <c:yellow>Analyze files</c>[<c:magenta>%i</c>] before renaming ..." >> output.Message)
             |> tee (List.length >> analyzeFiles.Start)
-            |> List.choose (fun toRename ->
-                analyzeFiles.Advance()
-                Some toRename
+            |> List.groupBy (fun { Renamed = file } -> file.FullPath)
+            |> List.choose (function
+                | (_, []) ->
+                    analyzeFiles.Advance()
+                    None
+
+                | (_, [ justRenamed ]) ->
+                    analyzeFiles.Advance()
+                    Some justRenamed
+
+                | (path, duplicities) ->
+                    let sizes =
+                        duplicities
+                        |> List.map (fun { Original = original } ->
+                            original.FullPath, (FileInfo original.FullPath).Length
+                        )
+                        |> Map.ofList
+
+                    let dimensions =
+                        duplicities
+                        |> List.choose (function
+                            | { Original = { Type = FileType.Image path }} ->
+                                match path |> Image.getDimensions with
+                                | Ok dimensions -> Some (path, dimensions)
+                                | Error e ->
+                                    logger.LogWarning("Image {path} has no dimensions due to {error}.", path, e)
+                                    None
+
+                            | _ -> None
+                        )
+                        |> Map.ofList
+
+                    if output.IsDebug() then
+                        output.SubTitle $"[Debug] Analyzing duplicities from path {path}"
+                        duplicities
+                        |> List.map (fun toRename ->
+                            let (height, width) =
+                                match dimensions |> Map.tryFind toRename.Original.FullPath with
+                                | Some { Height = height; Width = width } -> height, width
+                                | _ -> 0, 0
+
+                            [
+                                toRename.Renamed.Name |> FileName.value
+                                toRename.Original.Name |> FileName.value
+                                (sizes[toRename.Original.FullPath] |> float) / 1024.0 |> string
+                                string height
+                                string width
+                            ]
+                        )
+                        |> output.Table [ "Renamed"; "Original"; "Size (kb)"; "Height"; "Width" ]
+
+
+
+                    analyzeFiles.Advance()
+                    None
             )   // todo analyze
             // todo - check duplicities
             // - pokud tam je, tak kouknout ktery je vetsi a ten pouzit a zalogovat ten druhy
