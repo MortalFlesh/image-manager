@@ -1,6 +1,7 @@
 namespace MF.ImageManager.Command
 
 open System.IO
+open Microsoft.Extensions.Logging
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ErrorHandling.AsyncResult.Operators
@@ -183,6 +184,13 @@ module FindSameImages =
     }
 
     let execute ((input, output): IO) =
+        use loggerFactory =
+            if output.IsDebug() then "vvv"
+            elif output.IsVeryVerbose() then "vv"
+            else "v"
+            |> LogLevel.parse
+            |> LoggerFactory.create "findSameImages"
+
         asyncResult {
             let target = input |> Input.getArgumentValue "target"
             let outputDir =
@@ -202,13 +210,6 @@ module FindSameImages =
 
             // todo - moznost pridat dalsi slozku (pak pustit 20XX + roztridit, ...)
 
-            use loggerFactory =
-                if output.IsDebug() then "vvv"
-                elif output.IsVeryVerbose() then "vv"
-                else "v"
-                |> LogLevel.parse
-                |> LoggerFactory.create "findSameImages"
-
             return! target |> run (input, output) loggerFactory (outputDir, pathPart)
         }
         |> AsyncResult.waitAfterFinish output 2000
@@ -218,5 +219,10 @@ module FindSameImages =
                 output.Success message
                 ExitCode.Success
             | Error errors ->
-                errors |> List.iter output.Error
+                let logger = loggerFactory.CreateLogger("Find Same Images Command")
+
+                errors
+                |> List.map (tee logger.LogError)
+                |> List.iter output.Error
+
                 ExitCode.Error

@@ -12,7 +12,7 @@ module Finder =
 
     [<RequireQualifiedAccess>]
     module private File =
-        let create ((_, output as io): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file =
+        let create (io: MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file =
             match file |> FileType.determine with
             | Some fileType ->
                 asyncResult {

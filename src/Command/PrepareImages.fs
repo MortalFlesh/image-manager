@@ -1,6 +1,7 @@
 namespace MF.ImageManager.Command
 
 open System.IO
+open Microsoft.Extensions.Logging
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
@@ -20,7 +21,6 @@ module PrepareCommand =
         Option.optional "exclude-list" (Some "x") "Text file contains a list of files you want to exclude from searching (<c:yellow>one file at line</c>)." None
         Option.noValue "force" (Some "f") "If set, target directory will NOT be excluded, and images may be overwritten."
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and images will only be sent to stdout."
-        Option.optional "prefix" None "Prefix all images with this static prefix, to allow the same image name from other sources." None
         Option.noValue "year" None "If set, target directory will have a sub-directory with year of the image created date."
         Option.noValue "month" None "If set, target directory will have a sub-directory with month of the image created date."
         Option.optional "fallback" None "If set, it will be used as a sub-directory in target directory for all files, which don't have other specific sub-directory." None
@@ -29,6 +29,13 @@ module PrepareCommand =
     ]
 
     let execute ((input, output): IO) =
+        use loggerFactory =
+            if output.IsDebug() then "vvv"
+            elif output.IsVeryVerbose() then "vv"
+            else "v"
+            |> LogLevel.parse
+            |> LoggerFactory.create "PrepareImages"
+
         asyncResult {
             let source = input |> Input.getOptionValueAsList "source"
             let target = input |> Input.getArgumentValue "target"
@@ -39,10 +46,6 @@ module PrepareCommand =
             let excludeList =
                 match input with
                 | Input.HasOption "exclude-list" _ -> input |> Input.getOptionValueAsString "exclude-list"
-                | _ -> None
-            let prefix =
-                match input with
-                | Input.HasOption "prefix" (OptionValue.ValueOptional (Some value)) -> Some (Prefix value)
                 | _ -> None
 
             let targetDirMode =
@@ -108,13 +111,6 @@ module PrepareCommand =
             output.Section <| sprintf "Prepare images to %s" config.Target
             output.Message <| sprintf "From:\n - %s" (config.Source |> String.concat "\n - ")
 
-            use loggerFactory =
-                if output.IsDebug() then "vvv"
-                elif output.IsVeryVerbose() then "vv"
-                else "v"
-                |> LogLevel.parse
-                |> LoggerFactory.create "PrepareImages"
-
             return!
                 config
                 |> Prepare.prepareForSorting (input, output) loggerFactory
@@ -126,7 +122,10 @@ module PrepareCommand =
                 output.Success message
                 ExitCode.Success
             | Error errors ->
+                let logger = loggerFactory.CreateLogger("Prepare Images Command")
+
                 errors
+                |> List.map (tee (PrepareError.format >> logger.LogError))
                 |> List.iter (function
                     | PrepareError.Exception e -> output.Error e.Message
                     | PrepareError.ErrorMessage message -> output.Error message

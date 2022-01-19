@@ -84,11 +84,6 @@ module Video =
     let isVideoExtension extension =
         extension |> String.toLower |> extensions.Contains
 
-type Dimensions = {
-    Height: int
-    Width: int
-}
-
 [<RequireQualifiedAccess>]
 module Image =
     /// https://en.wikipedia.org/wiki/Video_file_format
@@ -103,17 +98,6 @@ module Image =
 
     let isImageExtension extension =
         extension |> String.toLower |> extensions.Contains
-
-    open System.Drawing
-
-    let getDimensions path =
-        try
-            let img = Image.FromFile(path)
-            Ok {
-                Height = img.Height
-                Width = img.Width
-            }
-        with e -> Error e
 
 type FileType =
     | Image of string
@@ -146,13 +130,16 @@ module ExtensionModule =
     module Extension =
         open System.IO
 
+        let private create (extension: string) =
+            extension.Trim().ToLower() |> Extension
+
         let ofParsed = function
             | null | "" -> None
             | withoutLedingDot when withoutLedingDot.StartsWith('.') |> not -> None
-            | ext -> Some (Extension ext)
+            | ext -> Some (create ext)
 
         let fromPath (path: string) =
-            path |> Path.GetExtension |> Extension
+            path |> Path.GetExtension |> create
 
         let value (Extension ext) = ext
 

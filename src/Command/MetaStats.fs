@@ -1,5 +1,6 @@
 namespace MF.ImageManager.Command
 
+open Microsoft.Extensions.Logging
 open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
@@ -92,6 +93,13 @@ module MetaStatsCommand =
     }
 
     let execute ((input, output): IO) =
+        use loggerFactory =
+            if output.IsDebug() then "vvv"
+            elif output.IsVeryVerbose() then "vv"
+            else "v"
+            |> LogLevel.parse
+            |> LoggerFactory.create "MetaStats"
+
         asyncResult {
             let target = input |> Input.getArgumentValue "target"
 
@@ -105,13 +113,6 @@ module MetaStatsCommand =
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
-            use loggerFactory =
-                if output.IsDebug() then "vvv"
-                elif output.IsVeryVerbose() then "vv"
-                else "v"
-                |> LogLevel.parse
-                |> LoggerFactory.create "MetaStats"
-
             return! target |> run (input, output) loggerFactory ffmpeg
         }
         |> AsyncResult.waitAfterFinish output 2000
@@ -121,7 +122,10 @@ module MetaStatsCommand =
                 output.Success message
                 ExitCode.Success
             | Error errors ->
+                let logger = loggerFactory.CreateLogger("Meta Stats Command")
+
                 errors
+                |> List.map (tee (PrepareError.format >> logger.LogError))
                 |> List.iter (function
                     | PrepareError.Exception e -> output.Error e.Message
                     | PrepareError.ErrorMessage message -> output.Error message
