@@ -9,12 +9,12 @@ module Prepare =
     open MF.Utils.Progress
     open MF.ErrorHandling
 
-    let private copyFiles output config filesToCopy =
+    let private copyFiles ((_, output as io): MF.ConsoleApplication.IO) config filesToCopy =
         let totalCount = filesToCopy |> List.length
         output.Message $"Copy files[<c:magenta>{totalCount}</c>]"
 
         use progress =
-            let progress = new Progress(output, "\n")
+            let progress = new Progress(io, "\n")
 
             match config.TargetDirMode with
             | DryRun -> progress
@@ -62,18 +62,18 @@ module Prepare =
 
         output.NewLine()
 
-    let prepareForSorting output (loggerFactory: ILoggerFactory) config = asyncResult {
+    let prepareForSorting ((_, output as io): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) config = asyncResult {
         config.Target |> Directory.ensure
 
         output.NewLine()
         output.SubTitle "Find all files in source"
-        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource output loggerFactory config.Ffmpeg
+        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource io loggerFactory config.Ffmpeg
         // todo - tohle by melo celkove po prejmenovani na hashe probehnout rychleji, protoze uz by se nemely nacitat metadata, ale stacil by nazev
         output.NewLine()
 
         output.SubTitle "Exclude files from source by excluded dirs"
         let exclude = config.Target |> Finder.findFilesAndDirsToExclude config.TargetDirMode config.Exclude config.ExcludeList
-        let! excludedFiles = exclude |> Finder.findExcludedFiles output
+        let! excludedFiles = exclude |> Finder.findExcludedFiles io
 
         output.SubTitle "Copy files from source"
         let filesToCopy = allFilesInSource |> Finder.findFilesToCopy output excludedFiles
@@ -86,7 +86,7 @@ module Prepare =
             output.Message " * Files to copy:"
             output.List (filesToCopy |> List.map (File.name >> FileName.value))
 
-        filesToCopy |> copyFiles output config
+        filesToCopy |> copyFiles io config
 
         return "Done"
     }

@@ -4,12 +4,20 @@ module internal Progress =
     open System
     open MF.ConsoleApplication
 
-    type Progress (output: Output, name: string) =
+    let noProgressOption = Option.noValue "no-progress" None "Whether to disable all progress bars."
+
+    type Progress (io: MF.ConsoleApplication.IO, name: string) =
+        let (input, output) = io
         let mutable progressBar: ProgressBar option = None
 
         member __.Start(total: int) =
+            let enableProgressBars =
+                match input with
+                | Input.IsSetOption "no-progress" _ -> false
+                | _ -> true
+
             progressBar <-
-                if output.IsDebug()
+                if not enableProgressBars || output.IsDebug()
                     then
                         output.Message $"<c:dark-yellow>[Debug] Progress for \"{name}\" is disabled with debug mode</c>"
                         None
@@ -50,7 +58,7 @@ module FileSystem =
         | IgnoreDotFiles
         | All
 
-    let getAllFilesAsync (output: MF.ConsoleApplication.Output) searchFiles dir = async {
+    let getAllFilesAsync ((_, output as io): MF.ConsoleApplication.IO) searchFiles dir = async {
         let prefix = "  <c:gray>[FileSystem] </c>"
         let ignoreDotFiles: string seq -> string seq =
             match searchFiles with
@@ -61,7 +69,7 @@ module FileSystem =
         let dirs = getAllDirectories dir
 
         output.Message $"{prefix}  ├──> <c:cyan>Searching</c> for all <c:yellow>files</c> from <c:magenta>{dirs.Length}</c> directories ..."
-        use progress = new Progress(output, "Searching for files")
+        use progress = new Progress(io, "Searching for files")
         progress.Start(dirs.Length)
 
         let advance a =
@@ -174,9 +182,12 @@ module String =
 module AsyncResult =
     open MF.ErrorHandling
 
-    let handleMultipleResults (output: MF.ConsoleApplication.Output) =
-        if output.IsDebug() then AsyncResult.ofSequentialAsyncResults
+    let handleMultipleResultsBy sequential =
+        if sequential then AsyncResult.ofSequentialAsyncResults
         else AsyncResult.ofParallelAsyncResults
+
+    let handleMultipleResults (output: MF.ConsoleApplication.Output) =
+        handleMultipleResultsBy (output.IsDebug())
 
     let waitAfterFinish (output: MF.ConsoleApplication.Output) sleepFor ar = asyncResult {
         let! result = ar

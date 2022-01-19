@@ -14,12 +14,13 @@ module MetaStatsCommand =
 
     let options = [
         Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
+        Progress.noProgressOption
     ]
 
-    let private run output loggerFactory ffmpeg target = asyncResult {
+    let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg target = asyncResult {
         let! files =
             target
-            |> Finder.findAllFilesInDir output loggerFactory ffmpeg
+            |> Finder.findAllFilesInDir io loggerFactory ffmpeg
 
         files
         |> List.groupBy File.model
@@ -111,7 +112,7 @@ module MetaStatsCommand =
                 |> LogLevel.parse
                 |> LoggerFactory.create "MetaStats"
 
-            return! target |> run output loggerFactory ffmpeg
+            return! target |> run (input, output) loggerFactory ffmpeg
         }
         |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously

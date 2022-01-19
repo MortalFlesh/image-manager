@@ -97,7 +97,7 @@ module MetaData =
                 logger.LogWarning("File {file} could not be parsed due to {error}", file, e)
                 None
 
-    let find output (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
+    let find ((_, output): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
         if output.IsDebug() then
             output.Message $"<c:dark-yellow>[Debug]</c> Fetching metadata for <c:cyan>{file}</c> ..."
 

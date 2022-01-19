@@ -107,14 +107,14 @@ module RecognizeSameImage =
 
     open MF.ImageManager.ImageComparator
 
-    let private findImageByContent output (images: File list) = asyncResult {
+    let private findImageByContent ((_, output as io): MF.ConsoleApplication.IO) (images: File list) = asyncResult {
         let formatError (e: exn) =
             if output.IsVeryVerbose() then sprintf "%A" e
             else e.Message
 
         let! imagesWithHash =
             output.Message $"Loading images..."
-            use progress = new Progress(output, "Find images content hash.")
+            use progress = new Progress(io, "Find images content hash.")
             images
             |> tee (List.length >> progress.Start)
             |> List.map (ImageWithHash.fromImage output >> tee (fun _ -> progress.Advance()))
@@ -151,8 +151,8 @@ module RecognizeSameImage =
             )
     }
 
-    let findSameImages output (images: File list): AsyncResult<SameImageAdepts, string list> = asyncResult {
-        let! byCompleteHash, byDateTimeOriginal, byGps = images |> findImageByMetadata output
+    let findSameImages ((_, output as io): MF.ConsoleApplication.IO) (images: File list): AsyncResult<SameImageAdepts, string list> = asyncResult {
+        let! byCompleteHash, byDateTimeOriginal, byGps = images |> findImageByMetadata io
 
         let! byContent =
             let exlude =
@@ -168,7 +168,7 @@ module RecognizeSameImage =
 
             images
             |> List.filter (File.path >> exlude.Contains >> not)
-            |> findImageByContent output
+            |> findImageByContent io
             >>- fun errors ->
                 if output.IsVerbose() then errors |> List.iter output.Error
                 AsyncResult.ofSuccess []

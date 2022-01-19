@@ -25,6 +25,7 @@ module PrepareCommand =
         Option.noValue "month" None "If set, target directory will have a sub-directory with month of the image created date."
         Option.optional "fallback" None "If set, it will be used as a sub-directory in target directory for all files, which don't have other specific sub-directory." None
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
+        Progress.noProgressOption
     ]
 
     let execute ((input, output): IO) =
@@ -116,7 +117,7 @@ module PrepareCommand =
 
             return!
                 config
-                |> Prepare.prepareForSorting output loggerFactory
+                |> Prepare.prepareForSorting (input, output) loggerFactory
         }
         |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously

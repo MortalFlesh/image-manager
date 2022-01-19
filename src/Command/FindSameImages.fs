@@ -19,6 +19,7 @@ module FindSameImages =
     let options = [
         Option.required "output" (Some "o") "Output directory, where will all same image groups be coppied to." None
         Option.required "use-path" None "A part of an image full path, which should be kept in copping an same image." None
+        noProgressOption
     ]
 
     let private printImage output image =
@@ -50,7 +51,7 @@ module FindSameImages =
             )
         output.NewLine()
 
-    let private copySameImages output (adepts: SameImageAdepts) = function
+    let private copySameImages ((_, output as io): MF.ConsoleApplication.IO) (adepts: SameImageAdepts) = function
         | None, _ -> ()
         | Some outputDir, (pathPart: string option) ->
             let allAdepts = [
@@ -64,7 +65,7 @@ module FindSameImages =
 
             let (</>) a b = Path.Combine(a, b)
 
-            use progress = new Progress(output, "Copy adepts")
+            use progress = new Progress(io, "Copy adepts")
             progress.Start(totalAdepts)
 
             let rec checkTarget target =
@@ -148,10 +149,10 @@ module FindSameImages =
                 )
             )
 
-    let private run output loggerFactory copyTo target = asyncResult {
+    let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory copyTo target = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty
+            |> Finder.findAllFilesInDir io loggerFactory FFMpeg.empty
             <@> List.map PrepareError.format
 
         if output.IsVeryVerbose() then
@@ -164,7 +165,7 @@ module FindSameImages =
         output.Section "Finding same images ..."
         let! sameImages =
             images
-            |> RecognizeSameImage.findSameImages output
+            |> RecognizeSameImage.findSameImages io
 
         match copyTo, output.IsVerbose() with
         | (None, _), _ | _, true ->
@@ -176,7 +177,7 @@ module FindSameImages =
         | _ -> ()
 
         copyTo
-        |> copySameImages output sameImages
+        |> copySameImages io sameImages
 
         return "Done"
     }
@@ -208,7 +209,7 @@ module FindSameImages =
                 |> LogLevel.parse
                 |> LoggerFactory.create "findSameImages"
 
-            return! target |> run output loggerFactory (outputDir, pathPart)
+            return! target |> run (input, output) loggerFactory (outputDir, pathPart)
         }
         |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously

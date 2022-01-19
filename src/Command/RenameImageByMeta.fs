@@ -23,6 +23,7 @@ module RenameImageByMeta =
 
     let options = [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and images will only be sent to stdout."
+        noProgressOption
     ]
 
     type RenameFile = {
@@ -74,10 +75,10 @@ module RenameImageByMeta =
             File.Move(original.FullPath, renamed.FullPath, false)
         }
 
-    let private run output loggerFactory executeMode target: AsyncResult<string, RenameError list> = asyncResult {
+    let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory executeMode target: AsyncResult<string, RenameError list> = asyncResult {
         let! images =
             target
-            |> Finder.findAllFilesInDir output loggerFactory FFMpeg.empty <@> List.map PrepareError
+            |> Finder.findAllFilesInDir io loggerFactory FFMpeg.empty <@> List.map PrepareError
 
         output.NewLine()
 
@@ -94,7 +95,7 @@ module RenameImageByMeta =
 
         let! (preparedRenames: RenameFile list) =
             let logger = loggerFactory.CreateLogger("Prepare renaming files")
-            use prepareRenamesProgress = new Progress(output, "Prepare renames")
+            use prepareRenamesProgress = new Progress(io, "Prepare renames")
 
             images
             |> tee (List.length >> sprintf "  ├──> <c:yellow>Prepare files</c>[<c:magenta>%i</c>] to rename ..." >> output.Message)
@@ -127,7 +128,7 @@ module RenameImageByMeta =
 
         let (analyzedRenames: RenameFile list) =
             let logger = loggerFactory.CreateLogger("Analyze files")
-            use analyzeFiles = new Progress(output, "Analyze files")
+            use analyzeFiles = new Progress(io, "Analyze files")
 
             preparedRenames
             |> tee (List.length >> sprintf "  ├──> <c:yellow>Analyze files</c>[<c:magenta>%i</c>] before renaming ..." >> output.Message)
@@ -164,7 +165,7 @@ module RenameImageByMeta =
                         )
                         |> Map.ofList
 
-                    if output.IsDebug() then
+                    if output.IsDebug() || executeMode = DryRun then
                         output.SubTitle $"[Debug] Analyzing duplicities from path {path}"
                         duplicities
                         |> List.map (fun toRename ->
@@ -183,8 +184,6 @@ module RenameImageByMeta =
                         )
                         |> output.Table [ "Renamed"; "Original"; "Size (kb)"; "Height"; "Width" ]
 
-
-
                     analyzeFiles.Advance()
                     None
             )   // todo analyze
@@ -201,7 +200,7 @@ module RenameImageByMeta =
 
         let! results =
             let logger = loggerFactory.CreateLogger("Rename files")
-            use renameFiles = new Progress(output, "Rename files")
+            use renameFiles = new Progress(io, "Rename files")
 
             analyzedRenames
             |> List.map (fun toRename ->
@@ -216,7 +215,7 @@ module RenameImageByMeta =
             )
             |> tee (List.length >> sprintf "  ├──> <c:yellow>Renaming images</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
             |> tee (List.length >> renameFiles.Start)
-            |> AsyncResult.handleMultipleResults output RuntimeError
+            |> AsyncResult.handleMultipleResultsBy (output.IsDebug() || executeMode = DryRun) RuntimeError
 
         results |> Seq.length |> sprintf "  └──> Renaming images[<c:magenta>%i</c>] finished." |> output.Message
 
@@ -239,7 +238,7 @@ module RenameImageByMeta =
                 |> LogLevel.parse
                 |> LoggerFactory.create "RenameByMeta"
 
-            return! target |> run output loggerFactory executeMode
+            return! target |> run (input, output) loggerFactory executeMode
         }
         |> AsyncResult.waitAfterFinish output 2000
         |> Async.RunSynchronously

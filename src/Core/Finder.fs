@@ -12,7 +12,7 @@ module Finder =
 
     [<RequireQualifiedAccess>]
     module private File =
-        let create output (loggerFactory: ILoggerFactory) ffmpeg file =
+        let create ((_, output as io): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file =
             match file |> FileType.determine with
             | Some fileType ->
                 asyncResult {
@@ -26,7 +26,7 @@ module Finder =
                     | Some name ->
                         let loadMetadata =
                             fileType
-                            |> MetaData.find output loggerFactory ffmpeg
+                            |> MetaData.find io loggerFactory ffmpeg
 
                         return
                             Some {
@@ -44,22 +44,22 @@ module Finder =
                     return None
                 }
 
-    let findAllFilesInDir output loggerFactory ffmpeg dir = asyncResult {
+    let findAllFilesInDir ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg dir = asyncResult {
         output.Message $"Searching all images in <c:cyan>{dir}</c>"
 
         let! (files: string list) =
             dir
-            |> FileSystem.getAllFilesAsync output FileSystem.SearchFiles.IgnoreDotFiles
+            |> FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
 
-        use progress = new Progress(output, "Check metadata")
+        use progress = new Progress(io, "Check metadata")
         progress.Start(files.Length)
 
         let createFiles =
             files
             |> tee (List.length >> sprintf "  ├──> found <c:magenta>%i</c> files, <c:yellow>parallely checking metadata ...</c>" >> output.Message)
             |> List.map (
-                File.create output loggerFactory ffmpeg
+                File.create io loggerFactory ffmpeg
                 >> AsyncResult.tee (ignore >> progress.Advance)
             )
 
@@ -112,7 +112,7 @@ module Finder =
             excludeFiles, (if excludeDirs |> List.isEmpty then None else Some excludeDirs)
         | None -> [], excludeDirs
 
-    let findExcludedFiles output (excludeFiles, excludeDirs) = asyncResult {
+    let findExcludedFiles ((_, output as io): MF.ConsoleApplication.IO) (excludeFiles, excludeDirs) = asyncResult {
         output.Message "Searching all images to exclude"
 
         let! excludeFiles =
@@ -127,7 +127,7 @@ module Finder =
 
                     let! (files: string list list) =
                         excludeDirs
-                        |> List.map (FileSystem.getAllFilesAsync output FileSystem.SearchFiles.IgnoreDotFiles)
+                        |> List.map (FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles)
                         |> AsyncResult.ofSequentialAsyncs PrepareError.Exception
 
                     return
