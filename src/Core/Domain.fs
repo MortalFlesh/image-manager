@@ -1,9 +1,11 @@
 namespace MF.ImageManager
 
 open System
+open System.IO
 open MF.ErrorHandling
 open MF.Utils
 
+// todo - rename error
 [<RequireQualifiedAccess>]
 type PrepareError =
     | Exception of exn
@@ -16,6 +18,7 @@ module PrepareError =
         | PrepareError.ErrorMessage e -> e
 
 type TargetDirMode =
+    // | UseSubdir of string    // todo - je treba vic promyslet
     | Override
     | Exclude
     | DryRun
@@ -25,8 +28,6 @@ type TargetSubdir =
     | ByMonth
     | ByYear
     | ByYearAndMonth
-
-type Prefix = Prefix of string
 
 type MetaAttribute =
     /// "Exif SubIFD" => "Date/Time Original"
@@ -45,6 +46,45 @@ type MetaAttribute =
     /// other: https://www.codeproject.com/Articles/151869/Parsing-Latitude-and-Longitude-Information
     | GpsIso6709
     | Other
+
+type FullPath =
+    FullPath of string
+    with
+        member this.Value =
+            let (FullPath path) = this
+            path
+
+        member this.GetDirectoryName() =
+            this.Value |> Path.GetDirectoryName
+
+        member this.Replace((find: string), (replace: string)) =
+            this.Value.Replace(find, replace) |> FullPath
+
+[<RequireQualifiedAccess>]
+module FullPath =
+    let value (FullPath path) = path
+
+[<AutoOpen>]
+module ExtensionModule =
+    /// File extension, including a leading "."
+    type Extension = private Extension of string
+
+    [<RequireQualifiedAccess>]
+    module Extension =
+        open System.IO
+
+        let private create (extension: string) =
+            extension.Trim().ToLower() |> Extension
+
+        let ofParsed = function
+            | null | "" -> None
+            | withoutLeadingDot when withoutLeadingDot.StartsWith('.') |> not -> None
+            | ext -> Some (create ext)
+
+        let fromPath (path: string) =
+            path |> Path.GetExtension |> create
+
+        let value (Extension ext) = ext
 
 [<RequireQualifiedAccess>]
 module Video =
@@ -81,8 +121,8 @@ module Video =
 
     let private extensions = formats |> Set.map (String.toLower >> (+) ".")
 
-    let isVideoExtension extension =
-        extension |> String.toLower |> extensions.Contains
+    let isVideoExtension =
+        Extension.value >> String.toLower >> extensions.Contains
 
 [<RequireQualifiedAccess>]
 module Image =
@@ -96,52 +136,24 @@ module Image =
 
     let private extensions = formats |> Set.map (String.toLower >> (+) ".")
 
-    let isImageExtension extension =
-        extension |> String.toLower |> extensions.Contains
+    let isImageExtension =
+        Extension.value >> String.toLower >> extensions.Contains
 
 type FileType =
-    | Image of string
-    | Video of string
+    // todo - rename NoPath to default
+    | Image
+    | Video
 
 [<RequireQualifiedAccess>]
 module FileType =
-    open System.IO
-
     let determine (path: string) =
-        let extension = path |> Path.GetExtension |> String.toLower
-
-        match path, extension with
-        | null, _ | "", _
-        | _, null | _, "" -> None
-
-        | video, extension when extension |> Video.isVideoExtension -> Some (Video video)
-        | image, extension when extension |> Image.isImageExtension -> Some (Image image)
+        match path |> Extension.fromPath with
+        | extension when extension |> Video.isVideoExtension -> Some Video
+        | extension when extension |> Image.isImageExtension -> Some Image
 
         | _ -> None
 
 type Hash = Hash of string
-
-[<AutoOpen>]
-module ExtensionModule =
-    /// File extension, including a leading "."
-    type Extension = private Extension of string
-
-    [<RequireQualifiedAccess>]
-    module Extension =
-        open System.IO
-
-        let private create (extension: string) =
-            extension.Trim().ToLower() |> Extension
-
-        let ofParsed = function
-            | null | "" -> None
-            | withoutLedingDot when withoutLedingDot.StartsWith('.') |> not -> None
-            | ext -> Some (create ext)
-
-        let fromPath (path: string) =
-            path |> Path.GetExtension |> create
-
-        let value (Extension ext) = ext
 
 type FileName =
     | Hashed of Hash * Extension
@@ -154,32 +166,52 @@ type FileMetadata =
 type File = {
     Type: FileType
     Name: FileName
-    FullPath: string
+    FullPath: FullPath
     Metadata: FileMetadata
 }
+
+type FileToCopy = {
+    Source: File
+    Target: File
+}
+
+[<RequireQualifiedAccess>]
+module FileToCopy =
+    let source ({ Source = file }) = file
+    let target ({ Target = file }) = file
 
 [<RequireQualifiedAccess>]
 module FileMetadata =
     open MF.Utils.ConcurrentCache
 
-    type private FullPath = FullPath of string
     type private Metadata = Map<MetaAttribute, string>
 
     let private cache: Cache<FullPath, Metadata> = Cache.empty()
 
-    let load (file: File) =
+    let loadAsync (output: MF.ConsoleApplication.Output) (file: File) = asyncResult {
+        if output.IsDebug() then
+            output.Message $"<c:dark-yellow>[Debug] Loading metadata for file {file.Name}</c>"
+
         match file.Metadata with
         | FileMetadata.Lazy load ->
-            let key = Key (FullPath file.FullPath)
+            let key = Key file.FullPath
 
             match cache |> Cache.tryFind key with
-            | Some cached -> Ok cached
+            | Some cached ->
+                if output.IsDebug() then output.Message "  └──> Metadata loaded from cache"
+                return cached
             | _ ->
-                match load |> Async.RunSynchronously with
-                | Ok fresh ->
-                    cache |> Cache.set key fresh
-                    Ok fresh
-                | Error e -> Error e
+                if output.IsDebug() then output.Message "  ├──> Load fresh Metadata ..."
+                let! fresh = load
+                if output.IsDebug() then output.Message "  ├──> Fresh Metadata are loaded"
+                cache |> Cache.set key fresh
+                if output.IsDebug() then output.Message "  └──> Fresh Metadata stored in cache"
+
+                return fresh
+    }
+
+    let load output (file: File) =
+        file |> loadAsync output |> Async.RunSynchronously
 
 [<RequireQualifiedAccess>]
 module private Crypt =
@@ -204,7 +236,6 @@ module private Crypt =
 
 [<RequireQualifiedAccess>]
 module Hash =
-    open MF.ErrorHandling
     open MF.ErrorHandling.Option.Operators
 
     let value (Hash hash) = hash
@@ -220,8 +251,8 @@ module Hash =
         let clear =
             [
                 match fileType with
-                | FileType.Image _ -> Some "i"
-                | FileType.Video _ -> Some "v"
+                | FileType.Image -> Some "i"
+                | FileType.Video -> Some "v"
 
                 value CreatedAt
                 >>= DateTime.parseExifDateTime
@@ -259,26 +290,24 @@ module Hash =
     let tryParse = function
         | null | "" -> None
         | Regex @"^([i|v])(_.*)(\..*?)$" [ prefix; hash; extension ] ->
-            match prefix with
-            | "i" when extension |> Image.isImageExtension ->
-                maybe {
-                    let! extension = extension |> Extension.ofParsed
+            match prefix, extension |> Extension.ofParsed with
+            | "i", Some extension when extension |> Image.isImageExtension ->
+                Some (Hash $"{prefix}{hash}", extension)
 
-                    return (Hash $"{prefix}{hash}", extension)
-                }
-            | "v" when extension |> Video.isVideoExtension ->
-                maybe {
-                    let! extension = extension |> Extension.ofParsed
+            | "v", Some extension when extension |> Video.isVideoExtension ->
+                Some (Hash $"{prefix}{hash}", extension)
 
-                    return (Hash $"{prefix}{hash}", extension)
-                }
             | _ -> None
+        | _ -> None
+
+    let tryGetCreated = function
+        | Hash (Regex @"^(i|v)_(\d{4})(\d{2})" [ _prefix; year; month ]) -> Some (int year, int month)
         | _ -> None
 
 [<RequireQualifiedAccess>]
 module FileName =
     let value = function
-        | Hashed (Hash hash, extension) -> $"{hash}{extension |> Extension.value}"
+        | Hashed (Hash hash, extension) -> sprintf "%s%s" hash (extension |> Extension.value)
         | Normal name -> name
 
     let tryParse = function
@@ -312,22 +341,26 @@ module File =
     let name { Name = name } = name
     let path { FullPath = path } = path
 
-    let hash = name >> (function
-        | Hashed (hash, _) -> Some hash
+    let hash = function
+        | { Name = Hashed (hash, _) } -> Some hash
         | _ -> None
-    )
 
-    let private metaData = FileMetadata.load
-    let private tryMetaData = metaData >> Result.toOption
+    let inline private (>!>) f1 f2 = f1 >> Async.map f2
 
-    let createdAtRaw: File -> string option =
-        tryMetaData >> Option.bind (Map.tryFind CreatedAt)
+    let private metaDataAsync output file = async {
+        let! meta = file |> FileMetadata.loadAsync output
 
-    let createdAtDateTime: File -> DateTime option =
-        createdAtRaw >> Option.bind DateTime.parseExifDateTime
+        return meta |> Result.toOption
+    }
 
-    let model: File -> string option =
-        tryMetaData >> Option.bind (Map.tryFind Model)
+    let createdAtRawAsync output: File -> Async<string option> =
+        metaDataAsync output >!> Option.bind (Map.tryFind CreatedAt)
+
+    let createdAtDateTimeAsync output: File -> Async<DateTime option> =
+        createdAtRawAsync output >!> Option.bind DateTime.parseExifDateTime
+
+    let modelAsync output: File -> Async<string option> =
+        metaDataAsync output >!> Option.bind (Map.tryFind Model)
 
 [<RequireQualifiedAccess>]
 type FFMpeg =
@@ -342,7 +375,8 @@ module FFMpeg =
     open System.IO
 
     let private runOnWindows () =
-        [ PlatformID.Win32NT; PlatformID.Win32S; PlatformID.Win32Windows; PlatformID.WinCE ] |> List.contains Environment.OSVersion.Platform
+        [ PlatformID.Win32NT; PlatformID.Win32S; PlatformID.Win32Windows; PlatformID.WinCE ]
+        |> List.contains Environment.OSVersion.Platform
 
     let empty = FFMpeg.Empty
 
@@ -366,3 +400,22 @@ module FFMpeg =
             else
                 Ok FFMpeg.OnOther
         with e -> Error (PrepareError.Exception e)
+
+//
+// Command errors
+//
+
+type PrepareFilesError =
+    | PrepareError of PrepareError
+    | PrepareErrors of PrepareError list
+    | RuntimeError of exn
+
+[<RequireQualifiedAccess>]
+module PrepareFilesError =
+    let format = function
+        | PrepareError e -> PrepareError.format e
+        | PrepareErrors e ->
+            e
+            |> List.map PrepareError.format
+            |> String.concat "\n"
+        | RuntimeError e -> $"Preparing ends with runtime error {e}"

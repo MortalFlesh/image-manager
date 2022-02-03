@@ -23,18 +23,19 @@ module MetaStatsCommand =
             target
             |> Finder.findAllFilesInDir io loggerFactory ffmpeg
 
+        (* //! count by model
         files
         |> List.groupBy File.model
         |> List.map (fun (k, v) -> k, v |> List.length)
         |> List.sortBy snd
         |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
-        |> output.Table [ "Model"; "Count" ]
+        |> output.Table [ "Model"; "Count" ] *)
 
         let filter items =
             if output.IsDebug() then items
             else items |> List.filter (snd >> (fun x -> x > 1))
 
-        (*
+        (* //! compute hash
         let crypt v = v, v |> Crypt.md5 // or other alg
 
         files
@@ -70,7 +71,7 @@ module MetaStatsCommand =
                     let format (k, v) =
                         $"<c:yellow>{k |> MetaAttribute.value}</c>: {v}"
 
-                    match i |> FileMetadata.load |> Result.map Map.toList with
+                    match i |> FileMetadata.load output |> Result.map Map.toList with
                     | Ok [] -> "<c:red>---</c>", []
                     | Error error -> $"<c:red>{error}</c>", []
                     | Ok [ one ] -> one |> format, []

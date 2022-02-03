@@ -7,7 +7,6 @@
     },
     {
         "target-subdir": "year-month",
-        "prefix": "prefix-",
         "source": [
             "one",
             "two"

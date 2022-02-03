@@ -55,14 +55,13 @@ module RenameImageByMeta =
                 file.FullPath
             member this.Target =
                 let (FileToMove (hash, file)) = this
-                let targetDir = (file.FullPath |> Path.GetDirectoryName) </> (hash |> Hash.value)
+                let targetDir = file.FullPath.GetDirectoryName() </> (hash |> Hash.value)
                 let targetPath = targetDir </> (file.Name |> FileName.value)
                 targetDir, targetPath
 
     type RenameError =
         | PrepareError of PrepareError
         | NoMetadata of File
-        | RenameIsAllowedForOriginalAndRenamedFileOnly of (RenameFile * RenameFile)
         | RuntimeError of exn
 
     [<RequireQualifiedAccess>]
@@ -70,18 +69,17 @@ module RenameImageByMeta =
         let format = function
             | PrepareError e -> PrepareError.format e
             | NoMetadata file -> $"File {file.FullPath} has no metadata"
-            | RenameIsAllowedForOriginalAndRenamedFileOnly files -> $"You must replace old files with a new one. You sent {files}."
             | RuntimeError e -> $"Renaming ends with runtime error {e}"
 
     [<RequireQualifiedAccess>]
     module private File =
-        let convertToHash: File -> _ = function
+        let convertToHash output: File -> _ = function
             | { Name = Hashed _ } -> None
             | { Name = Normal name; Type = fileType } as file ->
                 Some (asyncResult {
                     let! metadata =
                         file
-                        |> FileMetadata.load
+                        |> FileMetadata.load output
                         |> Result.mapError PrepareError
 
                     if metadata.IsEmpty then
@@ -91,33 +89,27 @@ module RenameImageByMeta =
                     let extension = name |> Extension.fromPath
                     let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
 
-                    let fullPath = file.FullPath.Replace(name, hashName)
-
                     return {
                         file
                             with
-                                Type =
-                                    match fileType with
-                                    | Image _ -> Image fullPath
-                                    | Video _ -> Video fullPath
                                 Name = Hashed (hash, extension)
-                                FullPath = fullPath
+                                FullPath = file.FullPath.Replace(name, hashName)
                     }
                 })
 
         let replace { Original = original; Renamed = renamed } = async {
-            File.Move(original.FullPath, renamed.FullPath, false)
+            File.Move(original.FullPath.Value, renamed.FullPath.Value, false)
         }
 
         let move (toMove: FileToMove) = async {
             let targetDir, targetPath = toMove.Target
             targetDir |> Directory.ensure
 
-            File.Move(toMove.FullPath, targetPath)
+            File.Move(toMove.FullPath.Value, targetPath)
         }
 
         let remove (FileToRemove file) = async {
-            File.Delete(file.FullPath)
+            File.Delete(file.FullPath.Value)
         }
 
     type TaskDependencies = {
@@ -132,16 +124,15 @@ module RenameImageByMeta =
     module private PrepareRenames =
         let run: RunTask<File, RenameFile list> =
             fun { IO = ((_, output) as io); LoggerFactory = loggerFactory } files -> asyncResult {
-                use prepareRenamesProgress = new Progress(io, "Prepare renames")
                 let logger = loggerFactory.CreateLogger("Prepare renaming files")
+                use prepareRenamesProgress = new Progress(io, "Prepare renames")
 
-                let! result =
+                return!
                     files
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Prepare files</c>[<c:magenta>%i</c>] to rename ..." >> output.Message)
-                    |> tee (List.length >> prepareRenamesProgress.Start)
                     |> List.choose (fun files ->
                         maybe {
-                            let! convertToHash = files |> File.convertToHash
+                            let! convertToHash = files |> File.convertToHash output
 
                             return
                                 asyncResult {
@@ -162,10 +153,9 @@ module RenameImageByMeta =
                         |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├────> Renaming file <c:cyan>{files.Name |> FileName.value}</c> is <c:dark-yellow>skipped</c>.")
                         |> tee (ignore >> prepareRenamesProgress.Advance)
                     )
+                    |> tee (List.length >> prepareRenamesProgress.Start)
                     |> AsyncResult.handleMultipleResults output RuntimeError
                     <!> List.choose id
-
-                return result
             }
 
     type AnalyzedResult = {
@@ -197,7 +187,7 @@ module RenameImageByMeta =
                         | (path, duplicities) ->
                             let sizes =
                                 duplicities
-                                |> List.map (fun { Original = original } -> original.FullPath, (FileInfo original.FullPath).Length)
+                                |> List.map (fun { Original = original } -> original.FullPath, (FileInfo original.FullPath.Value).Length)
                                 |> Map.ofList
 
                             let sizeGroups =
@@ -249,7 +239,7 @@ module RenameImageByMeta =
 
                                     [
                                         toRename.Renamed.Name |> FileName.value
-                                        toRename.Original.FullPath
+                                        toRename.Original.FullPath.Value
                                         (sizes[toRename.Original.FullPath] |> float) / 1024.0 |> string
                                         action
                                     ]
@@ -274,7 +264,7 @@ module RenameImageByMeta =
         let run: RunTask<RenameFile, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToRename -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Rename files")
-                use renameFiles = new Progress(io, "Rename files")
+                let renameFilesProgress = new Progress(io, "Rename files")
 
                 let! results =
                     filesToRename
@@ -285,12 +275,13 @@ module RenameImageByMeta =
                             | Execute -> do! toRename |> File.replace
                         }
                         <@> RuntimeError
-                        |> AsyncResult.tee renameFiles.Advance
-                        |> AsyncResult.teeError ((fun e -> logger.LogError("Rename file {file} failed with {error}", toRename, e)) >> renameFiles.Advance)
+                        |> Async.tee (ignore >> renameFilesProgress.Advance)
+                        |> AsyncResult.teeError ((fun e -> logger.LogError("Rename file {file} failed with {error}", toRename, e)) >> renameFilesProgress.Advance)
                     )
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Renaming files</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
-                    |> tee (List.length >> renameFiles.Start)
+                    |> tee (List.length >> renameFilesProgress.Start)
                     |> AsyncResult.handleMultipleResultsBy (output.IsDebug() || executeMode = DryRun) RuntimeError
+                    |> Async.tee (ignore >> renameFilesProgress.Finish)
 
                 results |> Seq.length |> sprintf "  └──> Renaming files[<c:magenta>%i</c>] finished." |> output.Message
 
@@ -302,7 +293,7 @@ module RenameImageByMeta =
         let run: RunTask<FileToMove, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToMove -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Move files to subdir")
-                use moveFiles = new Progress(io, "Move files to subdir")
+                let moveFilesProgress = new Progress(io, "Move files to subdir")
 
                 let! moveResults =
                     filesToMove
@@ -313,12 +304,13 @@ module RenameImageByMeta =
                             | Execute -> do! toMove |> File.move
                         }
                         <@> RuntimeError
-                        |> AsyncResult.tee moveFiles.Advance
-                        |> AsyncResult.teeError ((fun e -> logger.LogError("Move file {file} failed with {error}", toMove, e)) >> moveFiles.Advance)
+                        |> AsyncResult.tee moveFilesProgress.Advance
+                        |> AsyncResult.teeError ((fun e -> logger.LogError("Move file {file} failed with {error}", toMove, e)) >> moveFilesProgress.Advance)
                     )
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Move files</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
-                    |> tee (List.length >> moveFiles.Start)
+                    |> tee (List.length >> moveFilesProgress.Start)
                     |> AsyncResult.handleMultipleResultsBy (output.IsDebug() || executeMode = DryRun) RuntimeError
+                    |> Async.tee (ignore >> moveFilesProgress.Finish)
 
                 moveResults |> Seq.length |> sprintf "  └──> Moving files[<c:magenta>%i</c>] finished." |> output.Message
 
@@ -330,7 +322,7 @@ module RenameImageByMeta =
         let run: RunTask<FileToRemove, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToRemove -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Remove files")
-                use removeFiles = new Progress(io, "Remove files")
+                let removeFilesProgress = new Progress(io, "Remove files")
 
                 let! removeResults =
                     filesToRemove
@@ -341,12 +333,13 @@ module RenameImageByMeta =
                             | Execute -> do! toRemove |> File.remove
                         }
                         <@> RuntimeError
-                        |> AsyncResult.tee removeFiles.Advance
-                        |> AsyncResult.teeError ((fun e -> logger.LogError("Remove file {file} failed with {error}", toRemove, e)) >> removeFiles.Advance)
+                        |> AsyncResult.tee removeFilesProgress.Advance
+                        |> AsyncResult.teeError ((fun e -> logger.LogError("Remove file {file} failed with {error}", toRemove, e)) >> removeFilesProgress.Advance)
                     )
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Remove files</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
-                    |> tee (List.length >> removeFiles.Start)
+                    |> tee (List.length >> removeFilesProgress.Start)
                     |> AsyncResult.handleMultipleResultsBy (output.IsDebug() || executeMode = DryRun) RuntimeError
+                    |> Async.tee (ignore >> removeFilesProgress.Finish)
 
                 removeResults |> Seq.length |> sprintf "  └──> Removing files[<c:magenta>%i</c>] finished." |> output.Message
 
@@ -359,15 +352,6 @@ module RenameImageByMeta =
             |> Finder.findAllFilesInDir io loggerFactory ffmpeg <@> List.map PrepareError
 
         output.NewLine()
-
-        if output.IsVeryVerbose() then
-            files
-            |> List.groupBy File.model
-            |> List.map (fun (k, v) -> k, v |> List.length)
-            |> List.sortBy snd
-            |> List.map (fun (model, count) -> [ model |> Option.defaultValue "-"; string count ])
-            |> output.Table [ "Model"; "Count" ]
-            |> output.NewLine
 
         let dependencies = {
             IO = io

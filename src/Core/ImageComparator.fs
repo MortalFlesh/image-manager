@@ -20,6 +20,10 @@ type ImageWithHash = {
     Height: int
 }
 
+type ImageHashError =
+    | FileIsNotImage
+    | Runtime of exn
+
 [<RequireQualifiedAccess>]
 module ImageHash =
     // See https://stackoverflow.com/questions/35151067/algorithm-to-compare-two-images-in-c-sharp/35153895
@@ -62,11 +66,15 @@ module ImageHash =
 [<RequireQualifiedAccess>]
 module ImageWithHash =
     let fromImage output (image: DomainImage) = asyncResult {
+        if image.Type <> Image then
+            return! AsyncResult.ofError FileIsNotImage
+
         if output.IsDebug() then output.Message $"Generating hash for <c:yellow>{image.Name |> FileName.value}</c>"
 
         try
+            let (FullPath path) = image.FullPath
             // this works on Windows platform only
-            use bitmap = Bitmap.FromFile(image.FullPath, true)
+            use bitmap = Bitmap.FromFile(path, true)
 
             if output.IsDebug() then
                 output.Message (
@@ -84,7 +92,7 @@ module ImageWithHash =
                 Height = bitmap.Size.Height
             }
         with e ->
-            return! AsyncResult.ofError e
+            return! AsyncResult.ofError (Runtime e)
     }
 
     let image { Image = image } = image

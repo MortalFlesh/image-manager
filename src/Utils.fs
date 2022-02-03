@@ -10,23 +10,28 @@ module internal Progress =
         let (input, output) = io
         let mutable progressBar: ProgressBar option = None
 
-        member __.Start(total: int) =
+        member private __.IsEnabled() =
             let enableProgressBars =
                 match input with
                 | Input.IsSetOption "no-progress" _ -> false
                 | _ -> true
 
+            enableProgressBars && (not <| output.IsDebug())
+
+        member this.Start(total: int) =
             progressBar <-
-                if not enableProgressBars || output.IsDebug()
-                    then
-                        output.Message $"<c:dark-yellow>[Debug] Progress for \"{name}\" is disabled with debug mode</c>"
+                if this.IsEnabled()
+                    then Some (output.ProgressStart name total)
+                    else
+                        output.Message $"<c:dark-yellow>[Debug] Progress for \"{name}\" for (</c><c:magenta>{total}</c><c:dark-yellow>) is disabled</c>"
                         None
-                    else Some (output.ProgressStart name total)
 
         member __.Advance() =
             progressBar |> Option.iter output.ProgressAdvance
+            if output.IsDebug() then output.Message $"  ├──> <c:gray>[Debug] Progress advanced</c>"
 
         member __.Finish() =
+            if output.IsDebug() then output.Message $"  └──> <c:dark-yellow>[Debug] Progress finished</c>"
             progressBar |> Option.iter output.ProgressFinish
             progressBar <- None
 
@@ -69,14 +74,18 @@ module FileSystem =
         let dirs = getAllDirectories dir
 
         output.Message $"{prefix}  ├──> <c:cyan>Searching</c> for all <c:yellow>files</c> from <c:magenta>{dirs.Length}</c> directories ..."
-        use progress = new Progress(io, "Searching for files")
+        let progress = new Progress(io, "Searching for files")
         progress.Start(dirs.Length)
 
         let advance a =
             progress.Advance()
             a
 
-        let files = dirs |> List.collect (Directory.EnumerateFiles >> ignoreDotFiles >> Seq.toList >> advance)
+        let files =
+            dirs
+            |> List.collect (Directory.EnumerateFiles >> ignoreDotFiles >> Seq.toList >> advance)
+
+        progress.Finish()
         output.Message $"{prefix}  └──> <c:green>Found</c> <c:magenta>{files.Length}</c> <c:yellow>files</c> ..."
 
         return files
@@ -189,6 +198,13 @@ module AsyncResult =
     let handleMultipleResults (output: MF.ConsoleApplication.Output) =
         handleMultipleResultsBy (output.IsDebug())
 
+    let handleMultipleAsyncsBy sequential =
+        if sequential then AsyncResult.ofSequentialAsyncs
+        else AsyncResult.ofParallelAsyncs
+
+    let handleMultipleAsyncs (output: MF.ConsoleApplication.Output) =
+        handleMultipleAsyncsBy (output.IsDebug())
+
     let waitAfterFinish (output: MF.ConsoleApplication.Output) sleepFor ar = asyncResult {
         let! result = ar
         output.Message "Waiting ..."
@@ -268,3 +284,9 @@ module internal Logging =
                     )
                 |> ignore
             )
+
+module CommandHelp =
+    let commandHelp lines = lines |> String.concat "\n\n" |> Some
+
+    /// Concat two lines into one line for command help, so they won't be separated by other empty line
+    let inline (<+>) line1 line2 = sprintf "%s\n%s" line1 line2

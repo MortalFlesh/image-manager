@@ -29,7 +29,7 @@ module FindSameImages =
 
         if output.IsVerbose() then
             image
-            |> FileMetadata.load
+            |> FileMetadata.load output
             |> function
                 | Ok meta -> meta
                 | Error _ -> Map.empty
@@ -85,7 +85,7 @@ module FindSameImages =
 
                 let groupPath =
                     let dirPath =
-                        match pathPart, Path.GetDirectoryName(first.FullPath) with
+                        match pathPart, first.FullPath.GetDirectoryName() with
                         | Some part, path when path.Contains part ->
                             match path.Split part |> List.ofSeq with
                             | [] -> path
@@ -102,6 +102,7 @@ module FindSameImages =
 
                 items
                 |> List.iter (fun image ->
+                    let (FullPath sourcePath) = image.FullPath
                     let rawTarget = groupPath </> (image.Name |> FileName.value)
                     let target = rawTarget |> checkTarget
 
@@ -109,9 +110,9 @@ module FindSameImages =
                         output.Message $"Target already exists -> renamed to <c:dark-yellow>{target}</c>"
                         additionalMessages <- $"Renamed from {rawTarget} to {target}" :: additionalMessages
 
-                    if output.IsDebug() then output.Message $"Copy {image.FullPath} -> {target} ..."
+                    if output.IsDebug() then output.Message $"Copy {sourcePath} -> {target} ..."
 
-                    File.Copy(image.FullPath, target)
+                    File.Copy(sourcePath, target)
                     progress.Advance()
                 )
 
@@ -129,7 +130,7 @@ module FindSameImages =
                                     $"     - {i.FullPath}"
                                     yield!
                                         i
-                                        |> FileMetadata.load
+                                        |> FileMetadata.load output
                                         |> function
                                             | Ok meta -> meta
                                             | Error _ -> Map.empty

@@ -1,6 +1,7 @@
 namespace MF.ImageManager.Prepare
 
 module Prepare =
+    open System
     open System.IO
     open Microsoft.Extensions.Logging
     open MF.ImageManager
@@ -8,13 +9,91 @@ module Prepare =
     open MF.Utils
     open MF.Utils.Progress
     open MF.ErrorHandling
+    open MF.ErrorHandling.AsyncResult.Operators
 
-    let private copyFiles ((_, output as io): MF.ConsoleApplication.IO) config filesToCopy =
+    [<RequireQualifiedAccess>]
+    module private File =
+        type private Source = Source of File
+        type private Target = Target of File
+
+        let private targetPath output config (Source sourceFile) (Target targetFile): AsyncResult<FullPath, exn> = asyncResult {
+            let (/) (a: string) (b: obj) = Path.Combine(a, string b)
+            let fileName = targetFile.Name |> FileName.value
+
+            match config with
+            | { TargetSubdir = Flat } -> return FullPath (config.Target / fileName)
+            | _ ->
+                let! createdAt = sourceFile |> File.createdAtDateTimeAsync output
+
+                let month = sprintf "%02i"
+
+                let targetPath =
+                    match config, createdAt with
+                    | { TargetSubdirFallback = None }, None
+                    | { TargetSubdir = Flat }, _ -> config.Target / fileName
+
+                    | { TargetSubdir = ByMonth; TargetSubdirFallback = Some fallback }, None
+                    | { TargetSubdir = ByYear; TargetSubdirFallback = Some fallback }, None
+                    | { TargetSubdir = ByYearAndMonth; TargetSubdirFallback = Some fallback }, None -> config.Target / fallback / fileName
+
+                    | { TargetSubdir = ByMonth }, Some createdAt -> config.Target / (month createdAt.Month) / fileName
+                    | { TargetSubdir = ByYear }, Some createdAt -> config.Target / createdAt.Year / fileName
+                    | { TargetSubdir = ByYearAndMonth }, Some createdAt -> config.Target / createdAt.Year / (month createdAt.Month) / fileName
+
+                return FullPath targetPath
+        }
+
+        let private createFileToCopy output config sourceFile targetFile = asyncResult {
+            let! targetPath =
+                targetFile
+                |> targetPath output config sourceFile <@> RuntimeError
+
+            let (Source sourceFile) = sourceFile
+            let (Target targetFile) = targetFile
+
+            return {
+                Source = sourceFile
+                Target = { targetFile with FullPath = targetPath }
+            }
+        }
+
+        let useHashedFile (logger: ILogger) output config: File -> AsyncResult<FileToCopy, PrepareFilesError> = function
+            | { Name = Hashed _ } as alreadyHashedFile -> Target alreadyHashedFile |> createFileToCopy output config (Source alreadyHashedFile)
+
+            | { Name = Normal name; Type = fileType } as normalSourceFile ->
+                asyncResult {
+                    let! (metadata: Map<MetaAttribute, string>) =
+                        normalSourceFile
+                        |> FileMetadata.loadAsync output
+                        >>- (fun e ->
+                            logger.LogWarning("There is a problem with loading metadata for file {file}: {error}", normalSourceFile, e)
+                            AsyncResult.ofSuccess Map.empty
+                        )
+
+                    if metadata.IsEmpty then
+                        return! Target normalSourceFile |> createFileToCopy output config (Source normalSourceFile)
+
+                    else
+                        let hash = Hash.calculate fileType metadata
+                        let extension = name |> Extension.fromPath
+                        let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
+
+                        let hashedFile = Target {
+                            normalSourceFile
+                                with
+                                    Name = Hashed (hash, extension)
+                                    FullPath = normalSourceFile.FullPath.Replace(name, hashName)
+                        }
+
+                        return! hashedFile |> createFileToCopy output config (Source normalSourceFile)
+                }
+
+    let private copyFiles ((_, output as io): MF.ConsoleApplication.IO) config filesToCopy = asyncResult {
         let totalCount = filesToCopy |> List.length
         output.Message $"Copy files[<c:magenta>{totalCount}</c>]"
 
-        use progress =
-            let progress = new Progress(io, "\n")
+        let progress =
+            let progress = new Progress(io, "Copy files")
 
             match config.TargetDirMode with
             | DryRun -> progress
@@ -22,71 +101,154 @@ module Prepare =
                 progress.Start(totalCount)
                 progress
 
-        let (/) (a: obj) (b: obj) = Path.Combine(string a, string b)
-        let month = sprintf "%02i"
-
-        let targetPath (image: File) =
-            match config, image |> File.createdAtDateTime with
-            | { TargetSubdirFallback = None }, None
-            | { TargetSubdir = Flat }, _ -> config.Target / image.Name
-
-            | { TargetSubdir = ByMonth; TargetSubdirFallback = Some fallback }, None
-            | { TargetSubdir = ByYear; TargetSubdirFallback = Some fallback }, None
-            | { TargetSubdir = ByYearAndMonth; TargetSubdirFallback = Some fallback }, None -> config.Target / fallback / image.Name
-
-            | { TargetSubdir = ByMonth }, Some createdAt -> config.Target / (month createdAt.Month) / image.Name
-            | { TargetSubdir = ByYear }, Some createdAt -> config.Target / createdAt.Year / image.Name
-            | { TargetSubdir = ByYearAndMonth }, Some createdAt -> config.Target / createdAt.Year / (month createdAt.Month) / image.Name
-
         filesToCopy
-        |> List.iter (fun image ->
-            let targetPath = image |> targetPath
+        |> List.iter (fun fileToCopy ->
+            let sourcePath = fileToCopy.Source.FullPath.Value
+            let targetPath = fileToCopy.Target.FullPath.Value
 
             match config.TargetDirMode with
             | DryRun ->
-                output.Message <| sprintf "  ├── <c:cyan>%s</c> -> <c:green>%s</c>" image.FullPath targetPath
+                output.Message <| sprintf "  ├── <c:cyan>%s</c> -> <c:green>%s</c>" sourcePath targetPath
             | _ ->
                 targetPath
                 |> Path.GetDirectoryName
                 |> Directory.ensure
 
-                (image.FullPath, targetPath)
+                (sourcePath, targetPath)
                 |> FileSystem.copy
 
                 progress.Advance()
         )
+
+        progress.Finish()
 
         match config.TargetDirMode with
         | DryRun -> output.Message "  └──> <c:green>Done</c>"
         | _ -> ()
 
         output.NewLine()
+    }
 
-    let prepareForSorting ((_, output as io): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) config = asyncResult {
+    type private SubTaskDependencies = {
+        Config: Config
+        IO: IO
+        LoggerFactory: ILoggerFactory
+        Logger: ILogger
+    }
+
+    type private SubTask<'Success> = SubTaskDependencies -> AsyncResult<'Success, PrepareFilesError list>
+
+    [<RequireQualifiedAccess>]
+    module private SubTask =
+        let findFilesInSource: SubTask<File list> = fun { Config = config; IO = (_, output) as io; LoggerFactory = loggerFactory } -> asyncResult {
+            output.NewLine()
+            output.SubTitle "Find all files in source"
+
+            let! (allFilePathsInSource: File list) =
+                config.Source
+                |> Finder.findAllFilesInSource io loggerFactory config.Ffmpeg <@> (List.map PrepareError)
+
+            output.NewLine()
+
+            return allFilePathsInSource
+        }
+
+        let filterRelevantSourceFiles (allSourceFiles: File list): SubTask<File list> = fun { Config = config; IO = (_, output) as io; LoggerFactory = loggerFactory } -> asyncResult {
+            output.SubTitle $"Filter relevant source files [{allSourceFiles.Length}]"
+
+            let! (relevantSourceFiles: File list) =
+                match config.OnlyMonth with
+                | Some { Year = year; Month = month } ->
+                    asyncResult {
+                        let filter (file: File) = async {
+                            match file.Name with
+                            | Hashed (hash, _) when hash |> Hash.tryGetCreated = Some (year, month) -> return Some file
+                            | Hashed _ -> return None
+                            | _ ->
+                            match! file |> File.createdAtDateTimeAsync output with
+                            | Some createdAt when createdAt.Year = year && createdAt.Month = month -> return Some file
+                            | _ -> return None
+                        }
+
+                        use progress = new Progress(io, "Filter relevant files")
+
+                        let! relevantFiles =
+                            allSourceFiles
+                            |> List.map (filter >> Async.tee (ignore >> progress.Advance))
+                            |> tee (List.length >> progress.Start)
+                            |> AsyncResult.handleMultipleAsyncs output RuntimeError
+
+                        let relevantFiles = relevantFiles |> List.choose id
+
+
+                        return relevantFiles
+                    }
+                | _ -> allSourceFiles |> AsyncResult.ofSuccess
+
+            output.Message $"  └──> Filtered <c:magenta>{relevantSourceFiles.Length}</c> files"
+            output.NewLine()
+
+            return relevantSourceFiles
+        }
+
+        let useHashForFilesInSource (filesInSource: File list): SubTask<FileToCopy list> = fun { Config = config; IO = (_, output) as io; Logger = logger } -> asyncResult {
+            output.SubTitle $"Use hash for files in source [{filesInSource.Length}]"
+            let useHashProgress = new Progress(io, "Use hash for files")
+
+            let! hashedFilesInSource =
+                filesInSource
+                |> List.map (
+                    File.useHashedFile logger output config
+                    >> Async.tee (ignore >> useHashProgress.Advance)
+                )
+                |> tee (List.length >> useHashProgress.Start)
+                |> AsyncResult.handleMultipleResults output RuntimeError
+                |> Async.tee (ignore >> useHashProgress.Finish)
+
+            hashedFilesInSource |> List.length |> sprintf "  └──> hashed <c:magenta>%i</c> files" |> output.Message |> output.NewLine
+
+            return hashedFilesInSource
+        }
+
+        let exludeFiles: SubTask<string list> = fun { Config = config; IO = (_, output) as io; LoggerFactory = loggerFactory } -> asyncResult {
+            output.SubTitle "Exclude files from source by excluded dirs"
+            let exclude = config.Target |> Finder.findFilesAndDirsToExclude config.TargetDirMode config.Exclude config.ExcludeList
+
+            return!
+                exclude
+                |> Finder.findExcludedFiles io <@> (List.map PrepareError)
+        }
+
+        let copyFromFiles hashedFilesInSource excludedFiles: SubTask<unit> = fun { Config = config; IO = (_, output) as io; LoggerFactory = loggerFactory } -> asyncResult {
+            output.SubTitle "Copy files from source"
+            let filesToCopy = hashedFilesInSource |> Finder.findFilesToCopy output excludedFiles
+
+            if output.IsDebug() then
+                output.Message " * All files:"
+                output.List (filesToCopy |> List.map (FileToCopy.source >> File.name >> FileName.value))
+
+                output.Message " * Files to copy:"
+                output.List (filesToCopy |> List.map (FileToCopy.target >> File.name >> FileName.value))
+
+            do! filesToCopy |> copyFiles io config <@> (List.map PrepareError)
+        }
+
+    let prepareForSorting (io: MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) (config: Config): AsyncResult<_, PrepareFilesError list> = asyncResult {
+        let dependencies = {
+            Config = config
+            IO = io
+            LoggerFactory = loggerFactory
+            Logger = loggerFactory.CreateLogger("Prepare for sorting")
+        }
+
         config.Target |> Directory.ensure
 
-        output.NewLine()
-        output.SubTitle "Find all files in source"
-        let! allFilesInSource = config.Source |> Finder.findAllFilesInSource io loggerFactory config.Ffmpeg
-        // todo - tohle by melo celkove po prejmenovani na hashe probehnout rychleji, protoze uz by se nemely nacitat metadata, ale stacil by nazev
-        output.NewLine()
+        let! allFilesInSource = SubTask.findFilesInSource dependencies
+        let! relevantFilesInSource = SubTask.filterRelevantSourceFiles allFilesInSource dependencies
+        let! hashedFilesInSource = SubTask.useHashForFilesInSource relevantFilesInSource dependencies
+        let! excludedFiles = SubTask.exludeFiles dependencies
 
-        output.SubTitle "Exclude files from source by excluded dirs"
-        let exclude = config.Target |> Finder.findFilesAndDirsToExclude config.TargetDirMode config.Exclude config.ExcludeList
-        let! excludedFiles = exclude |> Finder.findExcludedFiles io
-
-        output.SubTitle "Copy files from source"
-        let filesToCopy = allFilesInSource |> Finder.findFilesToCopy output excludedFiles
-        // todo - tohle pak bude fungovat, jak by melo (s tim, ze by mely vsechny soubory v excluded byt uz hashovane, to je asi treba i zkontrolovat)
-
-        if output.IsVeryVerbose() then
-            output.Message " * All files:"
-            output.List (allFilesInSource |> List.map (File.name >> FileName.value))
-
-            output.Message " * Files to copy:"
-            output.List (filesToCopy |> List.map (File.name >> FileName.value))
-
-        filesToCopy |> copyFiles io config
+        do! SubTask.copyFromFiles hashedFilesInSource excludedFiles dependencies
 
         return "Done"
     }

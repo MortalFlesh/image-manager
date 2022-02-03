@@ -18,7 +18,7 @@ let main argv =
 
         command "prepare" {
             Description = "Prepares images for sorting"
-            Help = None
+            Help = Command.PrepareCommand.help
             Arguments = Command.PrepareCommand.arguments
             Options = Command.PrepareCommand.options
             Initialize = None

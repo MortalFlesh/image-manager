@@ -240,6 +240,12 @@ module Async =
     /// Apply a monadic function to an Async value
     let bind f xA = async.Bind(xA,f)
 
+    let tee f xA = async {
+        let! a = xA
+        f a
+
+        return a
+    }
 
 //==============================================
 // AsyncResult

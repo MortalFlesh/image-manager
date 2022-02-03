@@ -23,9 +23,9 @@ module MetaData =
                 )
                 |> Option.map (fun value -> tag, value)
 
-            let forImage (logger: ILogger) wanted (file: string) =
+            let forImage (logger: ILogger) wanted (FullPath path) =
                 try
-                    let meta = file |> ImageMetadataReader.ReadMetadata
+                    let meta = path |> ImageMetadataReader.ReadMetadata
 
                     //! print metadata, if needed
                     (* meta
@@ -36,7 +36,7 @@ module MetaData =
 
                     wanted |> List.choose (tryFind meta)
                 with e ->
-                    logger.LogWarning("File {file} could not be parsed due to {error}.", file, e)
+                    logger.LogWarning("File {file} could not be parsed due to {error}.", path, e)
                     []
 
         module private VideoMeta =
@@ -49,7 +49,7 @@ module MetaData =
                 | true, value -> Some (name, value)
                 | _ -> None
 
-            let forVideo output (logger: ILogger) ffmpeg wanted path = asyncResult {
+            let forVideo output (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
                 try
                     match ffmpeg with
                     | FFMpeg.OnOther | FFMpeg.Empty -> return []
@@ -103,10 +103,10 @@ module MetaData =
 
         let! parsedMetadata =
             match file with
-            | Image file ->
+            | Image, path ->
                 let logger = loggerFactory.CreateLogger("MetaData.Image")
 
-                file
+                path
                 |> Meta.forImage logger [
                     "Exif SubIFD", "Date/Time Original"
                     "Exif IFD0", "Model"
@@ -127,10 +127,10 @@ module MetaData =
                 )
                 |> AsyncResult.ofSuccess
 
-            | Video file ->
+            | Video, path ->
                 asyncResult {
                     let! meta =
-                        file
+                        path
                         |> Meta.forVideo output (loggerFactory.CreateLogger("MetaData.Video")) ffmpeg [
                             "creation_time"; "com.apple.quicktime.creationdate"
                             "model"; "com.apple.quicktime.model"

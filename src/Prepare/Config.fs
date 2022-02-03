@@ -2,9 +2,15 @@ namespace MF.ImageManager.Prepare
 
 open MF.ImageManager
 
+type OnlyMonth = {
+    Year: int
+    Month: int
+}
+
 type Config = {
     Source: string list
     Target: string
+    OnlyMonth: OnlyMonth option
     TargetSubdirFallback: string option
     TargetDirMode: TargetDirMode
     TargetSubdir: TargetSubdir
@@ -28,6 +34,7 @@ module Config =
         return {
             Target = ""
             Source = config.Source |> Seq.toList
+            OnlyMonth = None
             TargetSubdirFallback = config.Fallback
             TargetDirMode = targetDirMode
             TargetSubdir =
@@ -51,6 +58,7 @@ module Config =
             { defaults with
                 Target = config.Target
                 Source = config.Source @ defaults.Source |> List.distinct
+                OnlyMonth = config.OnlyMonth |> Option.orElse defaults.OnlyMonth
                 TargetSubdirFallback =
                     match config.TargetSubdirFallback with
                     | Some targetSubdirFallback -> Some targetSubdirFallback

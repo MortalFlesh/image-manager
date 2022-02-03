@@ -12,69 +12,78 @@ module Finder =
 
     [<RequireQualifiedAccess>]
     module private File =
-        let create (io: MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file =
-            match file |> FileType.determine with
+        let create ((_, output) as io: MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg path =
+            match path |> FileType.determine with
             | Some fileType ->
-                asyncResult {
-                    let name =
-                        file
-                        |> Path.GetFileName
-                        |> FileName.tryParse
+                let name =
+                    path
+                    |> Path.GetFileName
+                    |> FileName.tryParse
 
-                    match name with
-                    | None -> return None
-                    | Some name ->
-                        let loadMetadata =
-                            fileType
-                            |> MetaData.find io loggerFactory ffmpeg
+                let fullPath =
+                    path
+                    |> Path.GetFullPath
+                    |> FullPath
 
-                        return
-                            Some {
-                                Type = fileType
-                                Name = name
-                                FullPath = file |> Path.GetFullPath
-                                Metadata = FileMetadata.Lazy loadMetadata
-                            }
-                }
+                match name with
+                | None -> None
+                | Some name ->
+                    let loadMetadata =
+                        (fileType, fullPath)
+                        |> MetaData.find io loggerFactory ffmpeg
+
+                    Some {
+                        Type = fileType
+                        Name = name
+                        FullPath = fullPath
+                        Metadata = FileMetadata.Lazy loadMetadata
+                    }
             | _ ->
-                asyncResult {
-                    let logger = loggerFactory.CreateLogger("Finder")
-                    logger.LogWarning("File {file} is not image nor video (based on extension).", file)
+                let logger = loggerFactory.CreateLogger("Finder")
+                logger.LogWarning("File {file} is not image nor video (based on extension).", path)
+                if output.IsDebug() then output.Message $"  ├──> File <c:cyan>{path}</c> is not image nor video (based on extension)."
 
-                    return None
-                }
+                None
+
+        let createAsync io loggerFactory ffmpeg path = async {
+            return create io loggerFactory ffmpeg path
+        }
 
     let findAllFilesInDir ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg dir = asyncResult {
-        output.Message $"Searching all images in <c:cyan>{dir}</c>"
+        output.Message $"Searching for all files in <c:cyan>{dir}</c>"
 
         let! (files: string list) =
             dir
             |> FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
 
-        use progress = new Progress(io, "Check metadata")
-        progress.Start(files.Length)
+        output.Message $"Initializing found files [<c:magenta>{files.Length}</c>] from <c:cyan>{dir}</c>"
+        let progress = new Progress(io, "Initialize files")
 
         let createFiles =
             files
-            |> tee (List.length >> sprintf "  ├──> found <c:magenta>%i</c> files, <c:yellow>parallely checking metadata ...</c>" >> output.Message)
             |> List.map (
-                File.create io loggerFactory ffmpeg
-                >> AsyncResult.tee (ignore >> progress.Advance)
+                File.createAsync io loggerFactory ffmpeg
+                >> AsyncResult.ofAsyncCatch PrepareError.Exception
+                >> Async.tee (ignore >> progress.Advance)
             )
 
         let! files =
             createFiles
+            |> tee (List.length >> progress.Start)
             |> AsyncResult.handleMultipleResults output PrepareError.Exception
-            |> AsyncResult.tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> images with metadata" >> output.Message)
+            |> Async.tee (ignore >> progress.Finish)
 
-        return files |> List.choose id
+        return
+            files
+            |> List.choose id
+            |> tee (List.length >> sprintf "  └──> found <c:magenta>%i</c> files" >> output.Message)
     }
 
-    let findAllFilesInSource output loggerFactory ffmpeg source =
+    let findAllFilesInSource io loggerFactory ffmpeg source =
         source
         |> List.distinct
-        |> List.map (findAllFilesInDir output loggerFactory ffmpeg)
+        |> List.map (findAllFilesInDir io loggerFactory ffmpeg)
         |> AsyncResult.ofSequentialAsyncResults (PrepareError.Exception >> List.singleton)
         |> AsyncResult.map List.concat
         |> AsyncResult.mapError List.concat
@@ -83,8 +92,13 @@ module Finder =
         let excludeDirs =
             match targetDirMode, exclude with
             | Override, Some excludeDirs -> Some excludeDirs
-            | Exclude, Some excludeDirs -> Some (target :: excludeDirs)
-            | Exclude, None -> Some [ target ]
+
+            | Exclude, Some excludeDirs
+            | DryRun, Some excludeDirs -> Some (target :: excludeDirs)
+
+            | Exclude, None
+            | DryRun, None -> Some [ target ]
+
             | _ -> None
 
         match excludeList with
@@ -113,7 +127,10 @@ module Finder =
         | None -> [], excludeDirs
 
     let findExcludedFiles ((_, output as io): MF.ConsoleApplication.IO) (excludeFiles, excludeDirs) = asyncResult {
-        output.Message "Searching all images to exclude"
+        output.Message "Searching all files to exclude"
+        if output.IsDebug() then
+            output.Message <| sprintf "  ├──> Excluding dirs %A" excludeDirs
+            output.Message <| sprintf "  ├──> Excluding files %A" excludeFiles
 
         let! excludeFiles =
             match excludeDirs with
@@ -152,5 +169,5 @@ module Finder =
         if output.IsDebug() then output.List excludedFiles
 
         allFilesInSource
-        |> List.filter (File.name >> FileName.value >> File.notIn excludedFiles)
+        |> List.filter (FileToCopy.target >> File.name >> FileName.value >> File.notIn excludedFiles)
         |> tee (List.length >> sprintf "  └──> There are <c:green>%i</c> files to copy" >> output.Message >> output.NewLine)

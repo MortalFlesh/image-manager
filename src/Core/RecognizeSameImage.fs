@@ -27,16 +27,21 @@ module RecognizeSameImage =
 
     [<RequireQualifiedAccess>]
     module private TableItem =
-        let create (image: File) =
+        let create output (image: File) =
             let metadata =
                 image
-                |> FileMetadata.load
+                |> FileMetadata.load output
                 |> Result.orFail
+
+            let dateTimeOriginal =
+                image
+                |> File.createdAtRawAsync output
+                |> Async.RunSynchronously
 
             {
                 Image = image
                 CompleteHash = metadata |> Map.values |> String.concat "-"
-                DateTimeOriginal = image |> File.createdAtRaw |> Option.defaultValue ""
+                DateTimeOriginal = dateTimeOriginal |> Option.defaultValue ""
                 Gps =
                     [
                         metadata.TryFind GpsLatitude
@@ -52,27 +57,27 @@ module RecognizeSameImage =
         let dateTimeOriginal { DateTimeOriginal = value } = value
         let gps { DateTimeOriginal = value } = value
 
-    let private prepareTable output images =
-        use progress = new Progress(output, "Prepare images table")
+    let private prepareTable io images =
+        use progress = new Progress(io, "Prepare images table")
         images
         |> tee (List.length >> progress.Start)
-        |> List.map (TableItem.create >> tee (fun _ -> progress.Advance()))
+        |> List.map (TableItem.create (io |> snd) >> tee (ignore >> progress.Advance))
 
-    let private findBy output name exclude (f: TableItem -> string) images =
-        use progress = new Progress(output, $"Finding by {name}")
+    let private findBy io name exclude (f: TableItem -> string) images =
+        use progress = new Progress(io, $"Finding by {name}")
         images
         |> tee (List.length >> progress.Start)
         |> List.filter (exclude >> not)
-        |> List.groupBy (f >> tee (fun _ -> progress.Advance()))
+        |> List.groupBy (f >> tee (ignore >> progress.Advance))
         |> List.filter (fun (group, items) -> group.Length > 0 && items.Length > 1)
         |> List.map (fun (group, items) -> group, items |> List.map TableItem.image )
 
-    let private findImageByMetadata output images = asyncResult {
-        let imagesTable = images |> prepareTable output
+    let private findImageByMetadata io images = asyncResult {
+        let imagesTable = images |> prepareTable io
 
         let byCompleteHash =
             imagesTable
-            |> findBy output "Complete hash"
+            |> findBy io "Complete hash"
                 (fun _ -> false)
                 TableItem.completeHash
 
@@ -83,7 +88,7 @@ module RecognizeSameImage =
 
         let byDateTimeOriginal =
             imagesTable
-            |> findBy output "Date/Time original"
+            |> findBy io "Date/Time original"
                 (TableItem.completeHash >> excludeByCompleteHashSet.Contains)
                 TableItem.dateTimeOriginal
 
@@ -94,7 +99,7 @@ module RecognizeSameImage =
 
         let byGps =
             imagesTable
-            |> findBy output "GPS"
+            |> findBy io "GPS"
                 (fun i ->
                     (i |> TableItem.completeHash |> excludeByCompleteHashSet.Contains)
                     ||
@@ -108,17 +113,20 @@ module RecognizeSameImage =
     open MF.ImageManager.ImageComparator
 
     let private findImageByContent ((_, output as io): MF.ConsoleApplication.IO) (images: File list) = asyncResult {
-        let formatError (e: exn) =
-            if output.IsVeryVerbose() then sprintf "%A" e
-            else e.Message
+        let formatError = function
+            | Runtime e ->
+                if output.IsVeryVerbose() then sprintf "%A" e
+                else e.Message
+            | FileIsNotImage -> "File is not image"
 
+        let findImageContentProgress = new Progress(io, "Find images content hash.")
         let! imagesWithHash =
             output.Message $"Loading images..."
-            use progress = new Progress(io, "Find images content hash.")
             images
-            |> tee (List.length >> progress.Start)
-            |> List.map (ImageWithHash.fromImage output >> tee (fun _ -> progress.Advance()))
-            |> AsyncResult.handleMultipleResults output id <@> List.map formatError
+            |> List.map (ImageWithHash.fromImage output >> Async.tee (ignore >> findImageContentProgress.Advance))
+            |> tee (List.length >> findImageContentProgress.Start)
+            |> AsyncResult.handleMultipleResults output Runtime <@> List.map formatError
+            |> Async.tee (ignore >> findImageContentProgress.Finish)
 
         if output.IsDebug() then
             imagesWithHash
