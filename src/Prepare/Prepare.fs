@@ -164,6 +164,9 @@ module Prepare =
                             match file.Name with
                             | Hashed (hash, _) when hash |> Hash.tryGetCreated = Some (year, month) -> return Some file
                             | Hashed _ -> return None
+                            | Normal _ when file.FullPath |> Hash.Cache.tryFind |> Option.bind Hash.tryGetCreated = (Some (year, month)) ->
+                                if output.IsDebug() then output.Success $"Using cached hash for file {file.Name}"
+                                return Some file
                             | _ ->
                             match! file |> File.createdAtDateTimeAsync output with
                             | Some createdAt when createdAt.Year = year && createdAt.Month = month -> return Some file
@@ -179,7 +182,6 @@ module Prepare =
                             |> AsyncResult.handleMultipleAsyncs output RuntimeError
 
                         let relevantFiles = relevantFiles |> List.choose id
-
 
                         return relevantFiles
                     }

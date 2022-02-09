@@ -9,6 +9,7 @@
 - Add rename command by image meta data
 - Use net6.0
 - Log warnings and errors to file
+- Add cache for hashes
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation

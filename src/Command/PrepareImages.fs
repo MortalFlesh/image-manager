@@ -35,7 +35,10 @@ module PrepareCommand =
         Option.noValue "month" None "If set, target directory will have a sub-directory with month of the file created date."
         Option.optional "fallback" None "If set, it will be used as a sub-directory in target directory for all files, which don't have other specific sub-directory." None
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
-        Option.optional "only-month" None "If set, only photos from this month will be used for a checking (both target and source). Format is <c:yellow>MM</c> or <c:yellow>YYYY-MM</c>." None
+        Option.optional "only-month" None "If set, only photos from this month will be used for a checking. Format is <c:yellow>MM</c> or <c:yellow>YYYY-MM</c>." None
+        Option.noValue "only-current-month" None "If set, only photos from the current month will be used for a checking."
+        Option.noValue "only-previous-month" None "If set, only photos from the previous month will be used for a checking."
+        Option.noValue "use-cache" None "Use cache for file hashes (it must be preloaded by <c:cyan>cache:preload</c> command)."
         Progress.noProgressOption
     ]
 
@@ -65,6 +68,13 @@ module PrepareCommand =
                 | Input.IsSetOption "dry-run" _ -> DryRun
                 | _ -> Exclude
 
+            match input with
+            | Input.IsSetOption "use-cache" _ ->
+                do! Hash.Cache.load loggerFactory
+                    |> AsyncResult.mapError (PrepareError >> List.singleton)
+                output.Success "Note: Cache for hashes is loaded."
+            | _ -> ()
+
             let onlyMonth =
                 match input with
                 | Input.HasOption "only-month" _ ->
@@ -75,6 +85,13 @@ module PrepareCommand =
                     | Some (Regex @"^(\d{1})$" [ month ]) -> Some { Year = DateTime.Now.Year; Month = int month }
 
                     | _ -> None
+                | Input.HasOption "only-current-month" _ -> Some { Year = DateTime.Now.Year; Month = DateTime.Now.Month }
+                | Input.HasOption "only-previous-month" _ ->
+                    let now = DateTime.Now
+                    let currentMonth = new DateTime(now.Year, now.Month, 1)
+                    let previousMonth = currentMonth.AddMonths(-1)
+
+                    Some { Year = previousMonth.Year; Month = previousMonth.Month }
                 | _ -> None
 
             let! parsedConfig =

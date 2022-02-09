@@ -304,6 +304,104 @@ module Hash =
         | Hash (Regex @"^(i|v)_(\d{4})(\d{2})" [ _prefix; year; month ]) -> Some (int year, int month)
         | _ -> None
 
+    [<RequireQualifiedAccess>]
+    module Cache =
+        open Microsoft.Extensions.Logging
+        open MF.Utils.Progress
+        open MF.Utils.ConcurrentCache
+
+        let private cache: Cache<FullPath, Hash> = Cache.empty()
+        let private cachePath = "./.hash-cache.txt"
+
+        let load (loggerFactory: ILoggerFactory): AsyncResult<unit, PrepareError> =
+            asyncResult {
+                let! lines = cachePath |> File.ReadAllLinesAsync
+
+                lines
+                |> Seq.iter (function
+                    | null | "" -> ()
+                    | Regex @"^(.*):(.*?)$" [ fullPath; hash ] -> cache |> Cache.set (Key (FullPath fullPath)) (Hash hash)
+                    | _ -> ()
+                )
+
+                return ()
+            }
+            |> AsyncResult.mapError PrepareError.Exception
+            |> AsyncResult.bindError (fun e ->
+                loggerFactory.CreateLogger("Hash.Cache.load").LogWarning("Error: {error}", e |> PrepareError.format)
+                AsyncResult.ofSuccess ()
+            )
+
+        let clear: AsyncResult<unit, PrepareError> = asyncResult {
+            try
+                cache |> Cache.clear
+                File.Delete cachePath
+            with e ->
+                return! AsyncResult.ofError (PrepareError.Exception e)
+        }
+
+        let init ((_, output: MF.ConsoleApplication.Output) as io) (loggerFactory: ILoggerFactory) (files: File list): AsyncResult<unit, PrepareError list> = asyncResult {
+            let logger = loggerFactory.CreateLogger("Cache.init")
+            let debugMessage message =
+                if output.IsDebug() then output.Message <| sprintf "<c:dark-yellow>[Debug] %s</c>" message
+
+            debugMessage "Loading existing cache ..."
+            do! load loggerFactory |> AsyncResult.mapError List.singleton
+
+            debugMessage "Init hashes for files ..."
+            let progress = new Progress(io, "Init cache")
+
+            let keys = cache |> Cache.keys |> Set.ofList
+
+            let! (hashes: (FullPath * Hash) list) =
+                files
+                |> List.filter (fun file -> file.FullPath |> Key |> keys.Contains |> not)
+                |> List.choose (function
+                    | { Name = Hashed _ } -> None
+                    | { FullPath = path; Type = fileType } as file ->
+                        Some (asyncResult {
+                            let! metadata =
+                                file
+                                |> FileMetadata.load output
+
+                            if metadata.IsEmpty then
+                                logger.LogWarning("File {file} has no metadata.", file)
+                                return None
+                            else
+                                let hash = calculate fileType metadata
+                                debugMessage <| sprintf "Calculated hash for </c><c:cyan>%A</c><c:dark-yellow> is </c><c:magenta>%A</c><c:dark-yellow>" path hash
+                                return Some (path, hash)
+                        })
+                )
+                |> List.map (Async.tee (ignore >> progress.Advance))
+                |> tee (List.length >> progress.Start)
+                |> AsyncResult.handleMultipleResults output PrepareError.Exception
+                |> AsyncResult.map (List.choose id)
+            progress.Finish()
+
+            debugMessage $"Set hashes [{hashes.Length}] to cache ..."
+            hashes
+            |> List.iter (fun (path, hash) ->
+                cache |> Cache.set (Key path) hash
+            )
+
+            debugMessage $"Write current cache [{cache |> Cache.length}] ..."
+            let lines =
+                cache
+                |> Cache.items
+                |> List.map (fun (Key path, (Hash hash)) ->
+                    sprintf "%s:%s" path.Value hash
+                )
+                |> List.sort
+
+            do! File.WriteAllLinesAsync(cachePath, lines) |> AsyncResult.ofEmptyTaskCatch (PrepareError.Exception >> List.singleton)
+
+            return ()
+        }
+
+        let tryFind fullPath: Hash option =
+            cache |> Cache.tryFind (Key fullPath)
+
 [<RequireQualifiedAccess>]
 module FileName =
     let value = function

@@ -56,6 +56,26 @@ let main argv =
             Execute = Command.FindSameImages.execute
         }
 
+        command "cache:preload" {
+            Description = "Preloads a local cache with hashes for files, you can not or do not want to rename."
+            Help = None
+            Arguments = Command.CachePreload.arguments
+            Options = Command.CachePreload.options
+            Initialize = None
+            Interact = None
+            Execute = Command.CachePreload.execute
+        }
+
+        command "cache:clear" {
+            Description = "Clears a local cache with hashes for files."
+            Help = None
+            Arguments = Command.CacheClear.arguments
+            Options = Command.CacheClear.options
+            Initialize = None
+            Interact = None
+            Execute = Command.CacheClear.execute
+        }
+
         (* command "test" {
             Description = "Tests a console output"
             Help = None

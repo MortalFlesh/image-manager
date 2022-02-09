@@ -31,3 +31,4 @@ dist/
 
 .config.*
 logs/
+.hash-cache.txt
