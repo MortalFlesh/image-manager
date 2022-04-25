@@ -15,7 +15,6 @@ module MetaStatsCommand =
 
     let options = [
         Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
-        Progress.noProgressOption
     ]
 
     let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg target = asyncResult {
@@ -93,20 +92,20 @@ module MetaStatsCommand =
         return "Done"
     }
 
-    let execute ((input, output): IO) =
-        use loggerFactory =
-            if output.IsDebug() then "vvv"
-            elif output.IsVeryVerbose() then "vv"
-            else "v"
-            |> LogLevel.parse
-            |> LoggerFactory.create "MetaStats"
-
+    let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
         asyncResult {
-            let target = input |> Input.getArgumentValue "target"
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create "MetaStats"
+
+            let target = input |> Input.Argument.value "target"
 
             let! ffmpeg =
                 match input with
-                | Input.HasOption "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton
@@ -114,22 +113,11 @@ module MetaStatsCommand =
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
-            return! target |> run (input, output) loggerFactory ffmpeg
+            let! message = target |> run (input, output) loggerFactory ffmpeg
+
+            output.Success message
+
+            return ExitCode.Success
         }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok message ->
-                output.Success message
-                ExitCode.Success
-            | Error errors ->
-                let logger = loggerFactory.CreateLogger("Meta Stats Command")
-
-                errors
-                |> List.map (tee (PrepareError.format >> logger.LogError))
-                |> List.iter (function
-                    | PrepareError.Exception e -> output.Error e.Message
-                    | PrepareError.ErrorMessage message -> output.Error message
-                )
-
-                ExitCode.Error
+        |> AsyncResult.mapError (Errors.map "Meta Stats Command" output PrepareError.format)

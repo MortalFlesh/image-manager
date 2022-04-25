@@ -49,7 +49,7 @@ module MetaData =
                 | true, value -> Some (name, value)
                 | _ -> None
 
-            let forVideo output (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
+            let forVideo (output: Output) (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
                 try
                     match ffmpeg with
                     | FFMpeg.OnOther | FFMpeg.Empty -> return []

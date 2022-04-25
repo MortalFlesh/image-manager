@@ -25,7 +25,6 @@ module RenameImageByMeta =
 
     let options = [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and filess will only be sent to stdout."
-        noProgressOption
         Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
     ]
 
@@ -377,23 +376,23 @@ module RenameImageByMeta =
         return "Done"
     }
 
-    let execute ((input, output): IO) =
-        use loggerFactory =
-            if output.IsDebug() then "vvv"
-            elif output.IsVeryVerbose() then "vv"
-            else "v"
-            |> LogLevel.parse
-            |> LoggerFactory.create "RenameByMeta"
-
+    let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
         asyncResult {
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create "RenameByMeta"
+
             let executeMode =
                 match input with
-                | Input.IsSetOption "dry-run" _ -> DryRun
+                | Input.Option.IsSet "dry-run" _ -> DryRun
                 | _ -> Execute
 
             let! ffmpeg =
                 match input with
-                | Input.HasOption "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError (PrepareError >> List.singleton)
@@ -401,21 +400,13 @@ module RenameImageByMeta =
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
-            let target = input |> Input.getArgumentValue "target"
+            let target = input |> Input.Argument.value "target"
 
-            return! target |> run (input, output) loggerFactory ffmpeg executeMode
+            let! message = target |> run (input, output) loggerFactory ffmpeg executeMode
+
+            output.Success message
+
+            return ExitCode.Success
         }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok msg ->
-                output.Success msg
-                ExitCode.Success
-            | Error errors ->
-                let logger = loggerFactory.CreateLogger("Rename Image Command")
-
-                errors
-                |> List.map (RenameError.format >> tee logger.LogError)
-                |> Errors.show output
-
-                ExitCode.Error
+        |> AsyncResult.mapError (Errors.map "Rename Image Command" output RenameError.format)

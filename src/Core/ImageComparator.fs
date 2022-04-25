@@ -65,7 +65,7 @@ module ImageHash =
 
 [<RequireQualifiedAccess>]
 module ImageWithHash =
-    let fromImage output (image: DomainImage) = asyncResult {
+    let fromImage (output: Output) (image: DomainImage) = asyncResult {
         if image.Type <> Image then
             return! AsyncResult.ofError FileIsNotImage
 

@@ -162,7 +162,7 @@ module Finder =
             |> tee (List.length >> sprintf "  └──> Exclude <c:magenta>%i</c> files" >> output.Message >> output.NewLine)
     }
 
-    let findFilesToCopy output excludedFiles allFilesInSource =
+    let findFilesToCopy (output: Output) excludedFiles allFilesInSource =
         output.Message $"Searching all files to copy"
         output.Message <| sprintf "  ├──> From <c:magenta>%i</c> files from source" (allFilesInSource |> List.length)
         output.Message <| sprintf "  ├──> Exclude <c:red>%i</c> files" (excludedFiles |> List.length)

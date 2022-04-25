@@ -4,34 +4,19 @@ module internal Progress =
     open System
     open MF.ConsoleApplication
 
-    let noProgressOption = Option.noValue "no-progress" None "Whether to disable all progress bars."
-
     type Progress (io: MF.ConsoleApplication.IO, name: string) =
         let (input, output) = io
-        let mutable progressBar: ProgressBar option = None
+        let mutable progressBar: _ option = None
 
-        member private __.IsEnabled() =
-            let enableProgressBars =
-                match input with
-                | Input.IsSetOption "no-progress" _ -> false
-                | _ -> true
+        member private __.IsEnabled() = true
 
-            enableProgressBars && (not <| output.IsDebug())
-
-        member this.Start(total: int) =
-            progressBar <-
-                if this.IsEnabled()
-                    then Some (output.ProgressStart name total)
-                    else
-                        output.Message $"<c:dark-yellow>[Debug] Progress for \"{name}\" for (</c><c:magenta>{total}</c><c:dark-yellow>) is disabled</c>"
-                        None
+        member _.Start(total: int) =
+            progressBar <- Some (output.ProgressStart name total)
 
         member __.Advance() =
             progressBar |> Option.iter output.ProgressAdvance
-            if output.IsDebug() then output.Message $"  ├──> <c:gray>[Debug] Progress advanced</c>"
 
         member __.Finish() =
-            if output.IsDebug() then output.Message $"  └──> <c:dark-yellow>[Debug] Progress finished</c>"
             progressBar |> Option.iter output.ProgressFinish
             progressBar <- None
 
@@ -41,7 +26,6 @@ module internal Progress =
 
 module FileSystem =
     open System.IO
-    open Progress
 
     let rec getAllFiles = function
         | [] -> []
@@ -74,8 +58,7 @@ module FileSystem =
         let dirs = getAllDirectories dir
 
         output.Message $"{prefix}  ├──> <c:cyan>Searching</c> for all <c:yellow>files</c> from <c:magenta>{dirs.Length}</c> directories ..."
-        let progress = new Progress(io, "Searching for files")
-        progress.Start(dirs.Length)
+        let progress = dirs.Length |> output.ProgressStart "Searching for files"
 
         let advance a =
             progress.Advance()
@@ -159,13 +142,51 @@ module File =
         |> List.exists item.EndsWith
         |> not
 
+module internal Logging =
+    open System
+    open Microsoft.Extensions.Logging
+
+    let private normalizeString (string: string) =
+        string.Replace(" ", "").ToLowerInvariant()
+
+    [<RequireQualifiedAccess>]
+    module LogLevel =
+        let parse = normalizeString >> function
+            | "trace" | "vvv" -> LogLevel.Trace
+            | "debug" | "vv" -> LogLevel.Debug
+            | "information" | "v" | "normal" -> LogLevel.Information
+            | "warning" -> LogLevel.Warning
+            | "error" -> LogLevel.Error
+            | "critical" -> LogLevel.Critical
+            | "quiet" | "q" | _ -> LogLevel.None
+
+    [<RequireQualifiedAccess>]
+    module LoggerFactory =
+        open NReco.Logging.File
+
+        let create command level =
+            LoggerFactory.Create(fun builder ->
+                builder
+                    .SetMinimumLevel(level)
+                    .AddFile(
+                        (command |> normalizeString |> sprintf "logs/log_%s_{0:yyyy}-{0:MM}-{0:dd}.log"),
+                        fun c ->
+                            c.FormatLogFileName <- fun name -> String.Format(name, DateTime.UtcNow)
+                            c.Append <- true
+                            c.MinLevel <- LogLevel.Trace
+                    )
+                |> ignore
+            )
+
 [<RequireQualifiedAccess>]
 module Errors =
     open System
     open System.IO
     open MF.ConsoleApplication
+    open Microsoft.Extensions.Logging
+    open Logging
 
-    let show output (errors: string list) =
+    let private show (output: Output) (errors: string list) =
         if errors.Length > 10 then
             let now = DateTime.Now.ToString("dd-MM-yyyy--HH-mm")
             let file = $"rename-error--{now}.log"
@@ -174,6 +195,23 @@ module Errors =
         else
             errors
             |> List.iter output.Error
+
+    let map command (output: Output) format errors =
+        use loggerFactory =
+            if output.IsDebug() then "vvv"
+            elif output.IsVeryVerbose() then "vv"
+            else "v"
+            |> LogLevel.parse
+            |> LoggerFactory.create command
+
+        let logger = loggerFactory.CreateLogger command
+
+        errors
+        |> List.map (format >> tee logger.LogError)
+        |> show output
+
+        CommandError.Message $"There are {errors.Length} errors"
+        |> ConsoleApplicationError.CommandError
 
 [<RequireQualifiedAccess>]
 module String =
@@ -248,42 +286,6 @@ module Crc32 =
 
     //CRC32 from ASCII string
     let crc32OfString = crc32OfAscii >> sprintf "%x"
-
-module internal Logging =
-    open System
-    open Microsoft.Extensions.Logging
-
-    let private normalizeString (string: string) =
-        string.Replace(" ", "").ToLowerInvariant()
-
-    [<RequireQualifiedAccess>]
-    module LogLevel =
-        let parse = normalizeString >> function
-            | "trace" | "vvv" -> LogLevel.Trace
-            | "debug" | "vv" -> LogLevel.Debug
-            | "information" | "v" | "normal" -> LogLevel.Information
-            | "warning" -> LogLevel.Warning
-            | "error" -> LogLevel.Error
-            | "critical" -> LogLevel.Critical
-            | "quiet" | "q" | _ -> LogLevel.None
-
-    [<RequireQualifiedAccess>]
-    module LoggerFactory =
-        open NReco.Logging.File
-
-        let create command level =
-            LoggerFactory.Create(fun builder ->
-                builder
-                    .SetMinimumLevel(level)
-                    .AddFile(
-                        (command |> normalizeString |> sprintf "logs/log_%s_{0:yyyy}-{0:MM}-{0:dd}.log"),
-                        fun c ->
-                            c.FormatLogFileName <- fun name -> String.Format(name, DateTime.UtcNow)
-                            c.Append <- true
-                            c.MinLevel <- LogLevel.Trace
-                    )
-                |> ignore
-            )
 
 module CommandHelp =
     let commandHelp lines = lines |> String.concat "\n\n" |> Some

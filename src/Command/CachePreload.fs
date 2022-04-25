@@ -18,7 +18,6 @@ module CachePreload =
     let options = [
         Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
-        Progress.noProgressOption
     ]
 
     let private run (io: MF.ConsoleApplication.IO) loggerFactory ffmpeg target = asyncResult {
@@ -32,20 +31,20 @@ module CachePreload =
         return "Done"
     }
 
-    let execute ((input, output): IO) =
-        use loggerFactory =
-            if output.IsDebug() then "vvv"
-            elif output.IsVeryVerbose() then "vv"
-            else "v"
-            |> LogLevel.parse
-            |> LoggerFactory.create "CachePreload"
-
+    let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
         asyncResult {
-            let target = input |> Input.getArgumentValueAsString "target"
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create "CachePreload"
+
+            let target = input |> Input.Argument.asString "target"
 
             let! (parsedConfig: Config option) =
                 match input with
-                | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
+                | Input.Option.Has "config" (OptionValue.ValueOptional (Some config)) ->
                     config
                     |> File.ReadAllText
                     |> Config.parse TargetDirMode.Exclude
@@ -68,7 +67,7 @@ module CachePreload =
 
             let! ffmpeg =
                 match input with
-                | Input.HasOption "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton
@@ -76,22 +75,11 @@ module CachePreload =
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
-            return! target |> run (input, output) loggerFactory ffmpeg
+            let! message = target |> run (input, output) loggerFactory ffmpeg
+
+            output.Success message
+
+            return ExitCode.Success
         }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok message ->
-                output.Success message
-                ExitCode.Success
-            | Error errors ->
-                let logger = loggerFactory.CreateLogger("Cache Preload Command")
-
-                errors
-                |> List.map (tee (PrepareError.format >> logger.LogError))
-                |> List.iter (function
-                    | PrepareError.Exception e -> output.Error e.Message
-                    | PrepareError.ErrorMessage message -> output.Error message
-                )
-
-                ExitCode.Error
+        |> AsyncResult.mapError (Errors.map "Cache Preload Command" output PrepareError.format)

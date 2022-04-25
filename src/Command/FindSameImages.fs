@@ -18,12 +18,11 @@ module FindSameImages =
     ]
 
     let options = [
-        Option.required "output" (Some "o") "Output directory, where will all same image groups be coppied to." None
-        Option.required "use-path" None "A part of an image full path, which should be kept in copping an same image." None
-        noProgressOption
+        Option.optional "output" (Some "o") "Output directory, where will all same image groups be coppied to." None
+        Option.optional "use-path" None "A part of an image full path, which should be kept in copping an same image." None
     ]
 
-    let private printImage output image =
+    let private printImage (output: Output) image =
         output.Message $"Image <c:cyan>{image.Name |> FileName.value}</c>"
         output.Message $"  <c:gray>> {image.FullPath}</c>"
 
@@ -38,7 +37,7 @@ module FindSameImages =
             |> List.map (fun (k, v) -> [ k |> MetaAttribute.value; v ])
             |> output.Table [ "Meta"; "Value" ]
 
-    let private printGroup output name (group: SameImageGroup list) =
+    let private printGroup (output: Output) name (group: SameImageGroup list) =
         output.SubTitle $"Group {name}"
         match group with
         | [] -> output.Message "No items in this group."
@@ -184,23 +183,23 @@ module FindSameImages =
         return "Done"
     }
 
-    let execute ((input, output): IO) =
-        use loggerFactory =
-            if output.IsDebug() then "vvv"
-            elif output.IsVeryVerbose() then "vv"
-            else "v"
-            |> LogLevel.parse
-            |> LoggerFactory.create "findSameImages"
-
+    let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
         asyncResult {
-            let target = input |> Input.getArgumentValue "target"
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create "findSameImages"
+
+            let target = input |> Input.Argument.value "target"
             let outputDir =
                 match input with
-                | Input.HasOption "output" o -> o |> OptionValue.stringValue
+                | Input.Option.Has "output" o -> o |> OptionValue.stringValue
                 | _ -> None
             let pathPart =
                 match input with
-                | Input.HasOption "use-path" o -> o |> OptionValue.stringValue
+                | Input.Option.Has "use-path" o -> o |> OptionValue.stringValue
                 | _ -> None
 
             outputDir
@@ -211,19 +210,11 @@ module FindSameImages =
 
             // todo - moznost pridat dalsi slozku (pak pustit 20XX + roztridit, ...)
 
-            return! target |> run (input, output) loggerFactory (outputDir, pathPart)
+            let! message = target |> run (input, output) loggerFactory (outputDir, pathPart)
+
+            output.Success message
+
+            return ExitCode.Success
         }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok message ->
-                output.Success message
-                ExitCode.Success
-            | Error errors ->
-                let logger = loggerFactory.CreateLogger("Find Same Images Command")
-
-                errors
-                |> List.map (tee logger.LogError)
-                |> List.iter output.Error
-
-                ExitCode.Error
+        |> AsyncResult.mapError (Errors.map "Find Same Images Command" output id)

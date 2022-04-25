@@ -39,37 +39,36 @@ module PrepareCommand =
         Option.noValue "only-current-month" None "If set, only photos from the current month will be used for a checking."
         Option.noValue "only-previous-month" None "If set, only photos from the previous month will be used for a checking."
         Option.noValue "use-cache" None "Use cache for file hashes (it must be preloaded by <c:cyan>cache:preload</c> command)."
-        Progress.noProgressOption
     ]
 
-    let execute ((input, output): IO) =
-        use loggerFactory =
-            if output.IsDebug() then "vvv"
-            elif output.IsVeryVerbose() then "vv"
-            else "v"
-            |> LogLevel.parse
-            |> LoggerFactory.create "PrepareImages"
-
+    let execute = ExecuteAsyncResult <| fun (input, output) ->
         asyncResult {
-            let source = input |> Input.getOptionValueAsList "source"
-            let target = input |> Input.getArgumentValue "target"
+            use loggerFactory =
+                if output.IsDebug() then "vvv"
+                elif output.IsVeryVerbose() then "vv"
+                else "v"
+                |> LogLevel.parse
+                |> LoggerFactory.create "PrepareImages"
+
+            let source = input |> Input.Option.asList "source"
+            let target = input |> Input.Argument.value "target"
             let exclude =
                 match input with
-                | Input.HasOption "exclude" _ -> input |> Input.getOptionValueAsList "exclude"
+                | Input.Option.Has "exclude" _ -> input |> Input.Option.asList "exclude"
                 | _ -> []
             let excludeList =
                 match input with
-                | Input.HasOption "exclude-list" _ -> input |> Input.getOptionValueAsString "exclude-list"
+                | Input.Option.Has "exclude-list" _ -> input |> Input.Option.asString "exclude-list"
                 | _ -> None
 
             let targetDirMode =
                 match input with
-                | Input.IsSetOption "force" _ -> Override
-                | Input.IsSetOption "dry-run" _ -> DryRun
+                | Input.Option.IsSet "force" _ -> Override
+                | Input.Option.IsSet "dry-run" _ -> DryRun
                 | _ -> Exclude
 
             match input with
-            | Input.IsSetOption "use-cache" _ ->
+            | Input.Option.IsSet "use-cache" _ ->
                 do! Hash.Cache.load loggerFactory
                     |> AsyncResult.mapError (PrepareError >> List.singleton)
                 output.Success "Note: Cache for hashes is loaded."
@@ -77,16 +76,16 @@ module PrepareCommand =
 
             let onlyMonth =
                 match input with
-                | Input.HasOption "only-month" _ ->
-                    match input |> Input.getOptionValueAsString "only-month" with
+                | Input.Option.Has "only-month" _ ->
+                    match input |> Input.Option.asString "only-month" with
                     | Some (Regex @"^(\d{4})\-(\d{2})$" [ year; month ]) -> Some { Year = int year; Month = int month }
                     | Some (Regex @"^(\d{4})\-(\d{1})$" [ year; month ]) -> Some { Year = int year; Month = int month }
                     | Some (Regex @"^(\d{2})$" [ month ]) -> Some { Year = DateTime.Now.Year; Month = int month }
                     | Some (Regex @"^(\d{1})$" [ month ]) -> Some { Year = DateTime.Now.Year; Month = int month }
 
                     | _ -> None
-                | Input.HasOption "only-current-month" _ -> Some { Year = DateTime.Now.Year; Month = DateTime.Now.Month }
-                | Input.HasOption "only-previous-month" _ ->
+                | Input.Option.Has "only-current-month" _ -> Some { Year = DateTime.Now.Year; Month = DateTime.Now.Month }
+                | Input.Option.Has "only-previous-month" _ ->
                     let now = DateTime.Now
                     let currentMonth = new DateTime(now.Year, now.Month, 1)
                     let previousMonth = currentMonth.AddMonths(-1)
@@ -96,7 +95,7 @@ module PrepareCommand =
 
             let! parsedConfig =
                 match input with
-                | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
+                | Input.Option.Has "config" (OptionValue.ValueOptional (Some config)) ->
                     config
                     |> File.ReadAllText
                     |> Config.parse targetDirMode
@@ -114,13 +113,13 @@ module PrepareCommand =
                     TargetDirMode = targetDirMode
                     TargetSubdir =
                         match input, input with
-                        | Input.IsSetOption "year" _, Input.IsSetOption "month" _ -> ByYearAndMonth
-                        | Input.IsSetOption "year" _, _ -> ByYear
-                        | Input.IsSetOption "month" _, _ -> ByMonth
+                        | Input.Option.IsSet "year" _, Input.Option.IsSet "month" _ -> ByYearAndMonth
+                        | Input.Option.IsSet "year" _, _ -> ByYear
+                        | Input.Option.IsSet "month" _, _ -> ByMonth
                         | _ -> Flat
                     TargetSubdirFallback =
                         match input with
-                        | Input.HasOption "fallback" fallback -> fallback |> OptionValue.stringValue
+                        | Input.Option.Has "fallback" fallback -> fallback |> OptionValue.stringValue
                         | _ -> None
                     Exclude =
                         match exclude with
@@ -153,21 +152,13 @@ module PrepareCommand =
             output.Section <| sprintf "Prepare files to %s" config.Target
             output.Message <| sprintf "From:\n - %s" (config.Source |> String.concat "\n - ")
 
-            return!
+            let! message =
                 config
                 |> Prepare.prepareForSorting (input, output) loggerFactory
+
+            output.Success message
+
+            return ExitCode.Success
         }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok message ->
-                output.Success message
-                ExitCode.Success
-            | Error errors ->
-                let logger = loggerFactory.CreateLogger("Prepare Images Command")
-
-                errors
-                |> List.map (PrepareFilesError.format >> tee logger.LogError)
-                |> Errors.show output
-
-                ExitCode.Error
+        |> AsyncResult.mapError (Errors.map "Prepare Images Command" output PrepareFilesError.format)

@@ -4,30 +4,20 @@ open MF.ConsoleApplication
 open MF.ErrorHandling
 open MF.ImageManager
 open MF.Utils
+open MF.Utils.Logging
 
 [<RequireQualifiedAccess>]
 module CacheClear =
     let arguments = []
     let options = []
 
-    let private run = asyncResult {
-        do! Hash.Cache.clear
+    let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
+        asyncResult {
+            do! Hash.Cache.clear
 
-        return "Done"
-    }
+            output.Success "Done"
 
-    let execute ((input, output): IO) =
-        run
+            return ExitCode.Success
+        }
         |> AsyncResult.waitAfterFinish output 2000
-        |> Async.RunSynchronously
-        |> function
-            | Ok message ->
-                output.Success message
-                ExitCode.Success
-
-            | Error (PrepareError.Exception e) ->
-                output.Error e.Message
-                ExitCode.Error
-            | Error (PrepareError.ErrorMessage message) ->
-                output.Error message
-                ExitCode.Error
+        |> AsyncResult.mapError (List.singleton >> Errors.map "Cache Clear" output PrepareError.format)
