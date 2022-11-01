@@ -132,6 +132,7 @@ module Image =
         "jpg"; "jpeg"
         "png"
         "bmp"
+        "heic"
     ]
 
     let private extensions = formats |> Set.map (String.toLower >> (+) ".")
