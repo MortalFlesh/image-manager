@@ -17,6 +17,7 @@ module CachePreload =
 
     let options = CommonOptions.all @ [
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
+        Option.noValue CommonOptions.PreloadHashedAgain None "Whether to preload hashed files in cache again."
     ]
 
     let private run (io: MF.ConsoleApplication.IO) loggerFactory ffmpeg target = asyncResult {
@@ -66,10 +67,19 @@ module CachePreload =
 
             let! ffmpeg =
                 match input with
-                | Input.Option.Has CommonOptions.FFMpeg (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has CommonOptions.FFMpeg (OptionValue.ValueOptional (Some value)) -> FFMpeg.init (Some value)
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton
+
+            let ffmpeg =
+                FFMpeg.pick [
+                    ffmpeg
+
+                    (match parsedConfig with
+                    | Some config -> config.Ffmpeg
+                    | _ -> FFMpeg.empty)
+                ]
 
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg

@@ -25,6 +25,7 @@ module RenameImageByMeta =
 
     let options = CommonOptions.all @ [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and filess will only be sent to stdout."
+        Option.noValue CommonOptions.ReHashAgain None "Whether to re-hash already hashed files in again."
     ]
 
     type RenameFile = {
@@ -71,29 +72,40 @@ module RenameImageByMeta =
 
     [<RequireQualifiedAccess>]
     module private File =
-        let convertToHash output: File -> _ = function
-            | { Name = Hashed _ } -> None
-            | { Name = Normal name; Type = fileType } as file ->
-                Some (asyncResult {
-                    let! metadata =
-                        file
-                        |> FileMetadata.load output
-                        |> Result.mapError PrepareError
+        let private hashFile output file = asyncResult {
+            let name = file.Name |> FileName.value
 
-                    if metadata.IsEmpty then
-                        return! AsyncResult.ofError (NoMetadata file)
+            let! metadata =
+                file
+                |> FileMetadata.load output
+                |> Result.mapError PrepareError
 
-                    let hash = Hash.calculate fileType metadata
-                    let extension = name |> Extension.fromPath
-                    let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
+            if metadata.IsEmpty then
+                return! AsyncResult.ofError (NoMetadata file)
 
-                    return {
-                        file
-                            with
-                                Name = Hashed (hash, extension)
-                                FullPath = file.FullPath.Replace(name, hashName)
-                    }
-                })
+            let hash = Hash.calculate file.Type metadata
+            let extension = name |> Extension.fromPath
+            let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
+
+            return {
+                file
+                    with
+                        Name = Hashed (hash, extension)
+                        FullPath = file.FullPath.Replace(name, hashName)
+            }
+        }
+
+        let convertToHash ((input, output): IO): File -> _ =
+            let rehash =
+                match input with
+                | Input.Option.Has CommonOptions.ReHashAgain _ ->
+                    output.Note "Re-hash files again"
+                    true
+                | _ -> false
+
+            function
+            | { Name = Hashed _ } when not rehash -> None
+            | file -> Some (hashFile output file)
 
         let replace { Original = original; Renamed = renamed } = async {
             File.Move(original.FullPath.Value, renamed.FullPath.Value, false)
@@ -124,20 +136,21 @@ module RenameImageByMeta =
             fun { IO = ((_, output) as io); LoggerFactory = loggerFactory } files -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Prepare renaming files")
                 use prepareRenamesProgress = new Progress(io, "Prepare renames")
+                let convertToHash = File.convertToHash io
 
                 return!
                     files
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Prepare files</c>[<c:magenta>%i</c>] to rename ..." >> output.Message)
-                    |> List.choose (fun files ->
+                    |> List.choose (fun file ->
                         maybe {
-                            let! convertToHash = files |> File.convertToHash output
+                            let! convertToHash = file |> convertToHash
 
                             return
                                 asyncResult {
                                     let! hashedFile = convertToHash
 
                                     return Some {
-                                        Original = files
+                                        Original = file
                                         Renamed = hashedFile
                                     }
                                 }
@@ -148,7 +161,7 @@ module RenameImageByMeta =
                                     | error -> AsyncResult.ofError error
                                 )
                         }
-                        |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├────> Renaming file <c:cyan>{files.Name |> FileName.value}</c> is <c:dark-yellow>skipped</c>.")
+                        |> Option.teeNone (fun _ -> if output.IsDebug() then output.Message $"  ├────> Renaming file <c:cyan>{file.Name |> FileName.value}</c> is <c:dark-yellow>skipped</c>.")
                         |> tee (ignore >> prepareRenamesProgress.Advance)
                     )
                     |> tee (List.length >> prepareRenamesProgress.Start)

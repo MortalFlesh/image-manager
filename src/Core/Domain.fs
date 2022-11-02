@@ -316,6 +316,7 @@ module Hash =
     [<RequireQualifiedAccess>]
     module Cache =
         open Microsoft.Extensions.Logging
+        open MF.ConsoleApplication
         open MF.Utils.Progress
         open MF.Utils.ConcurrentCache
 
@@ -349,26 +350,40 @@ module Hash =
                 return! AsyncResult.ofError (PrepareError.Exception e)
         }
 
-        let init ((_, output: MF.ConsoleApplication.Output) as io) (loggerFactory: ILoggerFactory) (files: File list): AsyncResult<unit, PrepareError list> = asyncResult {
+        let init ((input, output: MF.ConsoleApplication.Output) as io) (loggerFactory: ILoggerFactory) (files: File list): AsyncResult<unit, PrepareError list> = asyncResult {
             let logger = loggerFactory.CreateLogger("Cache.init")
             let debugMessage message =
                 if output.IsDebug() then output.Message <| sprintf "<c:dark-yellow>[Debug] %s</c>" message
 
-            debugMessage "Loading existing cache ..."
+            output.Message "Loading existing cache ..."
             do! load loggerFactory |> AsyncResult.mapError List.singleton
+            output.Message $"<c:green> -> Cache loaded with {cache |> Cache.length} items</c>"
 
-            debugMessage "Init hashes for files ..."
+            output.Message "Init hashes for files ..."
             let progress = new Progress(io, "Init cache")
 
             let keys = cache |> Cache.keys |> Set.ofList
+
+            let initHashed =
+                match input with
+                | Input.Option.Has CommonOptions.PreloadHashedAgain _ ->
+                    output.Note "Preload hashed files again"
+                    true
+                | _ -> false
 
             let! (hashes: (FullPath * Hash) list) =
                 files
                 |> List.filter (fun file -> file.FullPath |> Key |> keys.Contains |> not)
                 |> List.choose (function
-                    | { Name = Hashed _ } -> None
+                    | { Name = Hashed _ } when not initHashed -> None
+
+                    | { FullPath = path; Name = Hashed (hash, _) } ->
+                        Some (path, hash)
+                        |> AsyncResult.ofSuccess
+                        |> Some
+
                     | { FullPath = path; Type = fileType } as file ->
-                        Some (asyncResult {
+                        let getHash = asyncResult {
                             let! metadata =
                                 file
                                 |> FileMetadata.load output
@@ -380,7 +395,9 @@ module Hash =
                                 let hash = calculate fileType metadata
                                 debugMessage <| sprintf "Calculated hash for </c><c:cyan>%A</c><c:dark-yellow> is </c><c:magenta>%A</c><c:dark-yellow>" path hash
                                 return Some (path, hash)
-                        })
+                        }
+
+                        Some (getHash |> AsyncResult.retry 5 |> AsyncResult.bindError (fun _ -> AsyncResult.ofSuccess None))
                 )
                 |> List.map (Async.tee (ignore >> progress.Advance))
                 |> tee (List.length >> progress.Start)
@@ -388,13 +405,13 @@ module Hash =
                 |> AsyncResult.map (List.choose id)
             progress.Finish()
 
-            debugMessage $"Set hashes [{hashes.Length}] to cache ..."
+            output.Message $"Set hashes [{hashes.Length}] to cache ..."
             hashes
             |> List.iter (fun (path, hash) ->
                 cache |> Cache.set (Key path) hash
             )
 
-            debugMessage $"Write current cache [{cache |> Cache.length}] ..."
+            output.Message $"Write current cache [{cache |> Cache.length}] ..."
             let lines =
                 cache
                 |> Cache.items
@@ -481,6 +498,11 @@ type FFMpeg =
     | Empty
 
 [<RequireQualifiedAccess>]
+type FFMpegError =
+    | Exception of exn
+    | ShouldBeDefined
+
+[<RequireQualifiedAccess>]
 module FFMpeg =
     open System
     open System.IO
@@ -488,6 +510,15 @@ module FFMpeg =
     let private runOnWindows () =
         [ PlatformID.Win32NT; PlatformID.Win32S; PlatformID.Win32Windows; PlatformID.WinCE ]
         |> List.contains Environment.OSVersion.Platform
+
+    open MediaToolkit.Services
+
+    let (|Instance|_|) = function
+        | FFMpeg.OnOther | FFMpeg.Empty -> None
+        | FFMpeg.OnOther | FFMpeg.Empty when runOnWindows() -> Some (Error FFMpegError.ShouldBeDefined)
+        | FFMpeg.OnWindows ffmpeg ->
+            try MediaToolkitService.CreateInstance(ffmpeg) |> Ok |> Some
+            with e -> Some (Error (FFMpegError.Exception e))
 
     let empty = FFMpeg.Empty
 
@@ -511,6 +542,14 @@ module FFMpeg =
             else
                 Ok FFMpeg.OnOther
         with e -> Error (PrepareError.Exception e)
+
+    let pick ffmpegs =
+        ffmpegs
+        |> List.tryPick (function
+            | FFMpeg.OnWindows _ as ffmpeg -> Some ffmpeg
+            | _ -> None
+        )
+        |> Option.defaultValue empty
 
 //
 // Command errors

@@ -63,11 +63,14 @@ module MetaData =
             let forVideo ((input, output): IO) (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
                 try
                     match ffmpeg with
-                    | FFMpeg.OnOther | FFMpeg.Empty -> return []
-                    | FFMpeg.OnWindows ffmpeg ->
-                        if output.IsVeryVerbose() then output.Message <| sprintf "ffmpeg: %s" ffmpeg
+                    | FFMpeg.Instance (Error (FFMpegError.Exception e)) -> return raise e
+                    | FFMpeg.Instance (Error FFMpegError.ShouldBeDefined) ->
+                        output.Warning "FFMpeg library should be defined."
+                        do! AsyncResult.sleep (10 * 1000)
+                        return []
 
-                        let service = MediaToolkitService.CreateInstance(ffmpeg)
+                    | FFMpeg.Instance (Ok service) ->
+                        if output.IsVeryVerbose() then output.Message <| sprintf "ffmpeg: %A" ffmpeg
 
                         let! (result: GetMetadataResult) =
                             service.ExecuteAsync(path |> FfTaskGetMetadata)
@@ -91,6 +94,8 @@ module MetaData =
 
                                 wanted |> List.choose (tryFind tags)
                             | _ -> []
+
+                    | _ -> return []
                 with e ->
                     logger.LogWarning("Video metadata for {file} could not be get due to {error}.", path, e)
                     return []

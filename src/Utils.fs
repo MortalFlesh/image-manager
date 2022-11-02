@@ -7,6 +7,8 @@ module CommonOptions =
     let [<Literal>] FFMpeg = "ffmpeg"
     let [<Literal>] OnlyVideo = "only-video"
     let [<Literal>] OnlyImage = "only-image"
+    let [<Literal>] PreloadHashedAgain = "preload-hashed"
+    let [<Literal>] ReHashAgain = "re-hash"
 
     let debugMetaOption = Option.noValue DebugMeta None "Whether to show all metadata for files."
     let ffmpegOption = Option.optional FFMpeg None "FFMpeg path in the current dir" None
@@ -284,16 +286,32 @@ module String =
 module AsyncResult =
     open MF.ErrorHandling
 
-    let handleMultipleResultsBy sequential =
-        if sequential then AsyncResult.ofSequentialAsyncResults
-        else AsyncResult.ofParallelAsyncResults
+    let rec retry attempts xA =
+        if attempts > 0 then
+            xA
+            |> AsyncResult.bindError (fun _ -> asyncResult {
+                do! AsyncResult.sleep 1000
+                return! xA
+            })
+            |> retry (attempts - 1)
+        else xA
+
+    let retryMultiple xA = xA |> List.map (retry 5)
+
+    let handleMultipleResultsBy sequential onError =
+        retryMultiple >> (
+            if sequential
+                then AsyncResult.ofSequentialAsyncResults onError
+                else AsyncResult.ofParallelAsyncResults onError
+        )
 
     let handleMultipleResults (output: MF.ConsoleApplication.Output) =
         handleMultipleResultsBy (output.IsDebug())
 
     let handleMultipleAsyncsBy sequential =
-        if sequential then AsyncResult.ofSequentialAsyncs
-        else AsyncResult.ofParallelAsyncs
+        if sequential
+            then AsyncResult.ofSequentialAsyncs
+            else AsyncResult.ofParallelAsyncs
 
     let handleMultipleAsyncs (output: MF.ConsoleApplication.Output) =
         handleMultipleAsyncsBy (output.IsDebug())

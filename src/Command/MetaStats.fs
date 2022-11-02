@@ -57,7 +57,7 @@ module MetaStatsCommand =
         |> List.map (fun (hash, count) -> [ hash; string count ])
         |> fun all -> all |> output.Table [ $"Hash ({all.Length})"; "Count" ]
 
-        if output.IsDebug() then
+        if output.IsVeryVerbose() then
             let separator =
                 let separator = "<c:gray>---</c>"
                 [ separator; separator; separator; separator ]
