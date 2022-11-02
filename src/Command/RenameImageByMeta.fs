@@ -23,9 +23,8 @@ module RenameImageByMeta =
         Argument.required "target" "Directory with filess."
     ]
 
-    let options = [
+    let options = CommonOptions.all @ [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and filess will only be sent to stdout."
-        Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
     ]
 
     type RenameFile = {
@@ -392,7 +391,7 @@ module RenameImageByMeta =
 
             let! ffmpeg =
                 match input with
-                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has CommonOptions.FFMpeg (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError (PrepareError >> List.singleton)

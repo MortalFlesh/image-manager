@@ -15,8 +15,7 @@ module CachePreload =
         Argument.optional "target" "Directory you want to add to cache. Alternatively you can pass a config option and use a config file (<c:yellow>source</c> field will be used as source in that case)." None
     ]
 
-    let options = [
-        Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
+    let options = CommonOptions.all @ [
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
     ]
 
@@ -67,7 +66,7 @@ module CachePreload =
 
             let! ffmpeg =
                 match input with
-                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has CommonOptions.FFMpeg (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton

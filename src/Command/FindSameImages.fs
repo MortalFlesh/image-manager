@@ -17,7 +17,7 @@ module FindSameImages =
         Argument.required "target" "Directory you want to check."
     ]
 
-    let options = [
+    let options = CommonOptions.all @ [
         Option.optional "output" (Some "o") "Output directory, where will all same image groups be coppied to." None
         Option.optional "use-path" None "A part of an image full path, which should be kept in copping an same image." None
     ]

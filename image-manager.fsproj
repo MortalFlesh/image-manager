@@ -7,10 +7,6 @@
     <RepositoryUrl>https://github.com/MortalFlesh/image-manager</RepositoryUrl>
   </PropertyGroup>
 
-  <!-- <ItemGroup>
-    <ProjectReference Include="../console-style/console-style.fsproj" />
-  </ItemGroup> -->
-
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
   </ItemGroup>

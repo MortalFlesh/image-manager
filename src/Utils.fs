@@ -1,5 +1,25 @@
 namespace MF.Utils
 
+module CommonOptions =
+    open MF.ConsoleApplication
+
+    let [<Literal>] DebugMeta = "debug-meta"
+    let [<Literal>] FFMpeg = "ffmpeg"
+    let [<Literal>] OnlyVideo = "only-video"
+    let [<Literal>] OnlyImage = "only-image"
+
+    let debugMetaOption = Option.noValue DebugMeta None "Whether to show all metadata for files."
+    let ffmpegOption = Option.optional FFMpeg None "FFMpeg path in the current dir" None
+    let videoOnlyOption = Option.noValue OnlyVideo None "Whether to rename video files only"
+    let imageOnlyOption = Option.noValue OnlyImage None "Whether to rename image files only"
+
+    let all = [
+        debugMetaOption
+        ffmpegOption
+        videoOnlyOption
+        imageOnlyOption
+    ]
+
 module internal Progress =
     open System
     open MF.ConsoleApplication
@@ -26,6 +46,7 @@ module internal Progress =
 
 module FileSystem =
     open System.IO
+    open MF.ConsoleApplication
 
     let rec getAllFiles = function
         | [] -> []
@@ -47,12 +68,39 @@ module FileSystem =
         | IgnoreDotFiles
         | All
 
-    let getAllFilesAsync ((_, output as io): MF.ConsoleApplication.IO) searchFiles dir = async {
+    type private FileFilter = string -> bool
+
+    type Is = {
+        IsVideo: string -> bool
+        IsImage: string -> bool
+    }
+
+    let getAllFilesAsync ((input, output as io): MF.ConsoleApplication.IO) searchFiles is dir = async {
         let prefix = "  <c:gray>[FileSystem] </c>"
-        let ignoreDotFiles: string seq -> string seq =
+        let ignoreDotFiles: FileFilter option =
             match searchFiles with
-            | SearchFiles.IgnoreDotFiles -> Seq.filter (fun file -> (file |> Path.GetFileName).StartsWith "." |> not)
-            | SearchFiles.All -> id
+            | SearchFiles.IgnoreDotFiles -> Some (fun file -> (file |> Path.GetFileName).StartsWith "." |> not)
+            | SearchFiles.All -> None
+
+        let findByType: FileFilter option =
+            match input with
+            | Input.Option.IsSet CommonOptions.OnlyImage _ -> Some is.IsImage
+            | Input.Option.IsSet CommonOptions.OnlyVideo _ -> Some is.IsVideo
+            | _ -> None
+
+        let filter: FileFilter option =
+            let filters =
+                [
+                    ignoreDotFiles
+                    findByType
+                ]
+                |> List.choose id
+
+            match filters with
+            | [] -> None
+            | filters -> Some <| fun file ->
+                filters
+                |> List.fold (fun acc filter -> acc && filter file) true
 
         output.Message $"{prefix}<c:yellow>Get all files in</c> <c:cyan>{dir}</c>"
         let dirs = getAllDirectories dir
@@ -64,9 +112,14 @@ module FileSystem =
             progress.Advance()
             a
 
+        let enumerateFiles =
+            match filter with
+            | Some filter -> Directory.EnumerateFiles >> Seq.filter filter
+            | _ -> Directory.EnumerateFiles
+
         let files =
             dirs
-            |> List.collect (Directory.EnumerateFiles >> ignoreDotFiles >> Seq.toList >> advance)
+            |> List.collect (enumerateFiles >> Seq.toList >> advance)
 
         progress.Finish()
         output.Message $"{prefix}  └──> <c:green>Found</c> <c:magenta>{files.Length}</c> <c:yellow>files</c> ..."
@@ -111,6 +164,8 @@ module DateTime =
 
     let formatToExif (dateTime: DateTime) =
         dateTime.ToString("yyyy:MM:dd HH:mm:ss")
+
+    let reformatToExif = parseExifDateTime >> Option.map formatToExif
 
 [<RequireQualifiedAccess>]
 module Directory =

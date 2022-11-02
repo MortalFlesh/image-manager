@@ -25,7 +25,7 @@ module PrepareCommand =
         Argument.required "target" "Directory you want to copy files to."
     ]
 
-    let options = [
+    let options = CommonOptions.all @ [
         Option.requiredArray "source" (Some "s") "Directory you want to search files." (Some [])
         Option.optionalArray "exclude" (Some "e") "Directories you want to exclude from searching." None
         Option.optional "exclude-list" (Some "x") "Text file contains a list of files you want to exclude from searching (<c:yellow>one file at line</c>)." None
@@ -138,7 +138,7 @@ module PrepareCommand =
             if output.IsDebug() then
                 output.Message <| sprintf "Config:\n%A\n" config
             elif output.IsVerbose() then
-                output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"; "FFMpeg"] [
+                output.Table ["Source"; "Target"; "Exclude"; "Exclude list from"; CommonOptions.FFMpeg] [
                     [
                         config.Source
                         [config.Target]

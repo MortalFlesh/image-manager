@@ -154,6 +154,14 @@ module FileType =
 
         | _ -> None
 
+    let isVideo = determine >> (=) (Some Video)
+    let isImage = determine >> (=) (Some Image)
+
+    let is: FileSystem.Is = {
+        IsVideo = isVideo
+        IsImage = isImage
+    }
+
 type Hash = Hash of string
 
 type FileName =
@@ -408,6 +416,10 @@ module FileName =
     let value = function
         | Hashed (Hash hash, extension) -> sprintf "%s%s" hash (extension |> Extension.value)
         | Normal name -> name
+
+    let hash = function
+        | Hashed (Hash hash, _) -> Some hash
+        | _ -> None
 
     let tryParse = function
         | null | "" -> None

@@ -10,6 +10,10 @@ module Finder =
     open MF.Utils.Progress
     open MF.ErrorHandling
 
+    type FileTypeToFind =
+        | All
+        | FindOnly of FileType
+
     [<RequireQualifiedAccess>]
     module private File =
         let create ((_, output) as io: MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg path =
@@ -54,7 +58,7 @@ module Finder =
 
         let! (files: string list) =
             dir
-            |> FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles
+            |> FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles FileType.is
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
 
         output.Message $"Initializing found files [<c:magenta>{files.Length}</c>] from <c:cyan>{dir}</c>"
@@ -144,7 +148,7 @@ module Finder =
 
                     let! (files: string list list) =
                         excludeDirs
-                        |> List.map (FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles)
+                        |> List.map (FileSystem.getAllFilesAsync io FileSystem.SearchFiles.IgnoreDotFiles FileType.is)
                         |> AsyncResult.ofSequentialAsyncs PrepareError.Exception
 
                     return

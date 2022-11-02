@@ -9,7 +9,7 @@ open MF.Utils.Logging
 [<RequireQualifiedAccess>]
 module CacheClear =
     let arguments = []
-    let options = []
+    let options = CommonOptions.all
 
     let execute = ExecuteAsyncResult <| fun ((input, output): IO) ->
         asyncResult {

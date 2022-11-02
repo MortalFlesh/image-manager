@@ -23,16 +23,27 @@ module MetaData =
                 )
                 |> Option.map (fun value -> tag, value)
 
-            let forImage (logger: ILogger) wanted (FullPath path) =
+            let forImage ((input, output): IO) (logger: ILogger) wanted (FullPath path) =
                 try
                     let meta = path |> ImageMetadataReader.ReadMetadata
 
-                    //! print metadata, if needed
-                    (* meta
-                    |> Seq.iter (fun dir ->
-                        output.Message $"dir: {dir.Name}"
-                        dir.Tags |> Seq.map (fun t -> if t.HasName then t.Name else "-") |> Seq.toList |> output.List |> output.NewLine
-                    ) *)
+                    match input with
+                    | Input.Option.Has CommonOptions.DebugMeta _ ->
+                        meta
+                        |> Seq.collect (fun dir -> [
+                            [ "<c:gray>-----</c>"; "<c:gray>-----</c>" ]
+                            [ "<c:dark-yellow|u>Dir</c>"; $"<c:dark-yellow|u>{dir.Name}</c>" ]
+
+                            yield!
+                                dir.Tags
+                                |> Seq.map (fun t -> [
+                                    (if t.HasName then $"<c:yellow>{t.Name}</c>" else "-")
+                                    t.Description
+                                ])
+                        ])
+                        |> List.ofSeq
+                        |> output.Table [ "Meta"; "Value" ]
+                    | _ -> ()
 
                     wanted |> List.choose (tryFind meta)
                 with e ->
@@ -49,7 +60,7 @@ module MetaData =
                 | true, value -> Some (name, value)
                 | _ -> None
 
-            let forVideo (output: Output) (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
+            let forVideo ((input, output): IO) (logger: ILogger) ffmpeg wanted (FullPath path) = asyncResult {
                 try
                     match ffmpeg with
                     | FFMpeg.OnOther | FFMpeg.Empty -> return []
@@ -72,10 +83,11 @@ module MetaData =
                             match format.Tags with
                             | IsNull -> []
                             | tags ->
-                                //! print metadata, if needed
-                                (* if output.IsDebug() then
+                                match input with
+                                | Input.Option.Has CommonOptions.DebugMeta _ ->
                                     output.SubTitle ("Video: " + path)
-                                    tags |> Seq.map (fun t -> [ t.Key; t.Value ]) |> List.ofSeq |> output.Table [ "Meta"; "Value" ] *)
+                                    tags |> Seq.map (fun t -> [ t.Key; t.Value ]) |> List.ofSeq |> output.Table [ "Meta"; "Value" ]
+                                | _ -> ()
 
                                 wanted |> List.choose (tryFind tags)
                             | _ -> []
@@ -97,7 +109,18 @@ module MetaData =
                 logger.LogWarning("File {file} could not be parsed due to {error}", file, e)
                 None
 
-    let find ((_, output): MF.ConsoleApplication.IO) (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
+    let private showParsed ((input, output): IO) name parsedMetadata =
+        match input with
+        | Input.Option.Has CommonOptions.DebugMeta _ ->
+            output.Section("%s matadata", name)
+
+            parsedMetadata
+            |> List.sortBy fst
+            |> List.map (fun (meta, value) -> [ $"{meta}"; value ])
+            |> output.Table [ "Meta"; "Value" ]
+        | _ -> ()
+
+    let find ((_, output) as io: IO) (loggerFactory: ILoggerFactory) ffmpeg file: AsyncResult<Map<MetaAttribute, string>, PrepareError> = asyncResult {
         if output.IsDebug() then
             output.Message $"<c:dark-yellow>[Debug]</c> Fetching metadata for <c:cyan>{file}</c> ..."
 
@@ -107,7 +130,7 @@ module MetaData =
                 let logger = loggerFactory.CreateLogger("MetaData.Image")
 
                 path
-                |> Meta.forImage logger [
+                |> Meta.forImage io logger [
                     "Exif SubIFD", "Date/Time Original"
                     "Exif IFD0", "Model"
                     "GPS", "GPS Latitude"
@@ -131,7 +154,7 @@ module MetaData =
                 asyncResult {
                     let! meta =
                         path
-                        |> Meta.forVideo output (loggerFactory.CreateLogger("MetaData.Video")) ffmpeg [
+                        |> Meta.forVideo io (loggerFactory.CreateLogger("MetaData.Video")) ffmpeg [
                             "creation_time"; "com.apple.quicktime.creationdate"
                             "model"; "com.apple.quicktime.model"
                             "location"; "com.apple.quicktime.location.ISO6709"
@@ -139,7 +162,7 @@ module MetaData =
 
                     return
                         meta
-                        |> List.sortByDescending (fst >> String.length) // move com.apple.... meta up in the list to prefer them
+                        |> List.sortBy (fst >> String.length) // move com.apple.... meta down in the list to prefer them
                         |> List.choose (function
                             | "creation_time", createdAt
                             | "com.apple.quicktime.creationdate", createdAt -> Some (CreatedAt, createdAt)
@@ -154,5 +177,8 @@ module MetaData =
                         )
                 }
 
-        return parsedMetadata |> Map.ofList
+        return
+            parsedMetadata
+            |> tee (showParsed io "Parsed")
+            |> Map.ofList
     }

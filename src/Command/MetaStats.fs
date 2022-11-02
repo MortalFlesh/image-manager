@@ -13,9 +13,7 @@ module MetaStatsCommand =
         Argument.required "target" "Directory you want to check."
     ]
 
-    let options = [
-        Option.optional "ffmpeg" None "FFMpeg path in the current dir" None
-    ]
+    let options = CommonOptions.all
 
     let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg target = asyncResult {
         let! files =
@@ -66,19 +64,31 @@ module MetaStatsCommand =
 
             files
             |> List.collect (fun i ->
+                let metadata = i |> FileMetadata.load output
+
                 let firstMeta, meta =
                     let format (k, v) =
                         $"<c:yellow>{k |> MetaAttribute.value}</c>: {v}"
 
-                    match i |> FileMetadata.load output |> Result.map Map.toList with
+                    match metadata |> Result.map Map.toList with
                     | Ok [] -> "<c:red>---</c>", []
                     | Error error -> $"<c:red>{error}</c>", []
                     | Ok [ one ] -> one |> format, []
                     | Ok (first :: rest) -> first |> format, rest |> List.map format
 
+                let currentHash = i.Name |> FileName.hash
+                let correctHash = metadata |> Result.map (Hash.calculate i.Type) |> Result.toOption |> Option.map Hash.value
+
                 [
                     yield [
                         $"<c:cyan>{i.Name |> FileName.value}</c>"
+
+                        match currentHash, correctHash with
+                        | Some current, Some correct when current = correct -> $"<c:cyan>{current}</c> (<c:green>OK</c>)"
+                        | Some current, Some correct when current <> correct -> $"<c:cyan>{current}</c> <> <c:cyan>{correct}</c> (<c:orange>Is different</c>)"
+                        | Some current, None -> $"<c:cyan>{current}</c> (<c:orange>Can not be recalculated</c>)"
+                        | None, Some correct -> $"<c:cyan>{correct}</c> (<c:orange>Should be hashed</c>)"
+                        | _ -> $"- (<c:red>There is no hash and can not be calculated</c>)"
 
                         $"<c:gray>{i.FullPath}</c>"
                         firstMeta
@@ -105,7 +115,7 @@ module MetaStatsCommand =
 
             let! ffmpeg =
                 match input with
-                | Input.Option.Has "ffmpeg" (OptionValue.ValueOptional value) -> FFMpeg.init value
+                | Input.Option.Has CommonOptions.FFMpeg (OptionValue.ValueOptional value) -> FFMpeg.init value
                 | _ -> Ok FFMpeg.Empty
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError List.singleton
