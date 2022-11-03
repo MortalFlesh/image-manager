@@ -72,6 +72,73 @@ module RenameImageByMeta =
 
     [<RequireQualifiedAccess>]
     module private File =
+        /// This should correct dir structure by new hashed file
+        /// for example from
+        /// - root/2022/07/i_20220701_x.jpg (original file)
+        /// - root/2022/07/i_20220504_x.jpg (hashed file)
+        /// - root/2022/05/i_20220504_x.jpg (all correct)
+        let private correctNestedDirStructure output originalFile hashedFile = asyncResult {
+            let! createdAt =
+                hashedFile
+                |> File.createdAtDateTimeAsync output
+                |> AsyncResult.ofAsyncCatch RuntimeError
+
+            return
+                match createdAt with
+                | Some (createdAt: DateTime) ->
+                    let originalPath =
+                        (originalFile.FullPath |> FullPath.value).Split Path.DirectorySeparatorChar
+                        |> List.ofArray
+                        |> List.rev
+
+                    match originalPath with
+                    | [] | [ _ ] | [ _; _ ] -> hashedFile
+                    | _fileName :: currentMonth :: currentYear :: _ ->
+                        let month = sprintf "%02i"
+
+                        let placeholder value = sprintf "%c%s%c" Path.DirectorySeparatorChar value Path.DirectorySeparatorChar
+
+                        { hashedFile
+                            with
+                                FullPath =
+                                    hashedFile.FullPath
+                                        .Replace(placeholder currentYear, placeholder (string createdAt.Year))
+                                        .Replace(placeholder currentMonth, placeholder (month createdAt.Month))
+                        }
+                | _ -> hashedFile
+        }
+
+        (* let test () =
+            let originalPath = "root/2022/07/i_20220701_x.jpg"
+            let createdAt = System.DateTime.Parse("2021-02-08")
+
+            let originalPathParts =
+                originalPath.Split(System.IO.Path.DirectorySeparatorChar)
+                |> List.ofArray
+                |> List.rev
+
+            let hashedPath = originalPath.Replace("i_20220701_x.jpg", "i_20210208_x.jpg")
+
+            let fixedPath =
+                match originalPathParts with
+                | [] | [ _ ] | [ _; _ ] -> hashedPath
+                | _fileName :: currentMonth :: currentYear :: _ ->
+                    let month = sprintf "%02i"
+
+                    let placeholder value = sprintf "%c%s%c" System.IO.Path.DirectorySeparatorChar value System.IO.Path.DirectorySeparatorChar
+
+                    hashedPath
+                        .Replace(placeholder currentYear, placeholder (string createdAt.Year))
+                        .Replace(placeholder currentMonth, placeholder (month createdAt.Month))
+
+            [
+                sprintf "%s (original)" originalPath
+                sprintf "%s (hashed)" hashedPath
+                sprintf "%s (fixed)" fixedPath
+            ]
+            |> List.iter (printfn "- %s")
+            () *)
+
         let private hashFile output file = asyncResult {
             let name = file.Name |> FileName.value
 
@@ -87,7 +154,7 @@ module RenameImageByMeta =
             let extension = name |> Extension.fromPath
             let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
 
-            return {
+            return! correctNestedDirStructure output file {
                 file
                     with
                         Name = Hashed (hash, extension)
@@ -108,7 +175,10 @@ module RenameImageByMeta =
             | file -> Some (hashFile output file)
 
         let replace { Original = original; Renamed = renamed } = async {
-            File.Move(original.FullPath.Value, renamed.FullPath.Value, false)
+            let newPath = renamed.FullPath.Value
+            newPath |> Path.GetDirectoryName |> Directory.ensure
+
+            File.Move(original.FullPath.Value, newPath, false)
         }
 
         let move (toMove: FileToMove) = async {
