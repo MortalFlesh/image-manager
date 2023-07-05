@@ -1,10 +1,10 @@
-framework: net6.0
+framework: net7.0
 storage: none
 
 source https://api.nuget.org/v3/index.json
-nuget FSharp.Core ~> 6.0
+nuget FSharp.Core ~> 7.0
 nuget FSharp.Data ~> 4.0
-nuget MF.ConsoleApplication ~> 4.3
+nuget MF.ConsoleApplication ~> 5.0
 nuget MetadataExtractor ~> 2.4
 nuget MediaToolkit
 nuget MediaToolkit.NetCore
@@ -17,6 +17,7 @@ group Build
     nuget Fake.IO.FileSystem
     nuget Fake.IO.Zip
     nuget Fake.Core.Target
+    nuget Fake.Core.UserInput
     nuget Fake.DotNet.AssemblyInfoFile
     nuget Fake.Core.ReleaseNotes
     nuget Fake.Tools.Git

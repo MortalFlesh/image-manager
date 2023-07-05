@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 APP="image-manager"
-NET="net6.0"
+NET="net7.0"
 
 CONSOLE="bin/Debug/$NET/$APP.dll"
 if [ ! -f "$CONSOLE" ]; then

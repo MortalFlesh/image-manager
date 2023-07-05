@@ -10,8 +10,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
-        dotnet: [6.0.408]
+        os: [macos-latest]
+        dotnet: [7.0.305]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -26,12 +26,12 @@ jobs:
         run: dotnet tool restore
 
       - name: Run tests
-        run: dotnet fake build
+        run: ./build.sh
 
   tests:
     strategy:
       matrix:
-        dotnet: [6.0.408]
+        dotnet: [7.0.305]
     runs-on: macos-latest
 
     steps:
@@ -46,4 +46,4 @@ jobs:
         run: dotnet tool restore
 
       - name: Run tests
-        run: dotnet fake build -t tests no-clean
+        run: ./build.sh -t tests
