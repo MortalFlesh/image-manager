@@ -11,10 +11,18 @@ module MetaData =
 
     [<RequireQualifiedAccess>]
     module private Meta =
+        type TagDir = TagDir of string
+        type TagName = TagName of string
+        type Tag = TagDir * TagName
+
+        [<RequireQualifiedAccess>]
+        module Tag =
+            let inDir dir name = Tag (TagDir dir, TagName name)
+
         module private ImageMeta =
             open MetadataExtractor
 
-            let private tryFind (attr: IReadOnlyList<Directory>) (dir, tag) =
+            let private tryFind (attr: IReadOnlyList<Directory>) (TagDir dir, TagName tag) =
                 attr
                 |> Seq.tryFind (fun d -> d.Name = dir)
                 |> Option.bind (fun dir ->
@@ -136,21 +144,28 @@ module MetaData =
 
                 path
                 |> Meta.forImage io logger [
-                    "Exif SubIFD", "Date/Time Original"
-                    "Exif IFD0", "Model"
-                    "GPS", "GPS Latitude"
-                    "GPS", "GPS Longitude"
-                    "GPS", "GPS Altitude"
+                    MetaAttribute.KeyCreatedAt |> Meta.Tag.inDir "Exif SubIFD"
+                    MetaAttribute.KeyModel |> Meta.Tag.inDir "Exif IFD0"
+
+                    MetaAttribute.KeyGpsLatitude |> Meta.Tag.inDir MetaAttribute.DirGPS
+                    MetaAttribute.KeyGpsLongitude |> Meta.Tag.inDir MetaAttribute.DirGPS
+                    MetaAttribute.KeyGpsAltitude |> Meta.Tag.inDir MetaAttribute.DirGPS
+
+                    MetaAttribute.KeyMajorBrand |> Meta.Tag.inDir MetaAttribute.DirQuickTimeFileType
                 ]
                 |> List.choose (function
                     | MetaAttribute.KeyCreatedAt, value ->
                         value
                         |> DateTimeOriginal.tryParse logger file
                         |> Option.map (fun createdAt -> CreatedAt, string createdAt)
+
                     | MetaAttribute.KeyModel, value -> Some (Model, value.Description)
                     | MetaAttribute.KeyGpsLatitude, value -> Some (GpsLatitude, value.Description)
                     | MetaAttribute.KeyGpsLongitude, value -> Some (GpsLongitude, value.Description)
                     | MetaAttribute.KeyGpsAltitude, value -> Some (GpsAltitude, value.Description)
+
+                    | MetaAttribute.KeyMajorBrand, value -> Some (MajorBrand, value.Description)
+
                     | _ -> None
                 )
                 |> AsyncResult.ofSuccess

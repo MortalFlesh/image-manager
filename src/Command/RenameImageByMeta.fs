@@ -151,7 +151,7 @@ module RenameImageByMeta =
                 return! AsyncResult.ofError (NoMetadata file)
 
             let hash = Hash.calculate file.Type metadata
-            let extension = name |> Extension.fromPath
+            let extension = name |> Extension.correctFromPath output metadata
             let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
 
             return! correctNestedDirStructure output file {
@@ -355,9 +355,9 @@ module RenameImageByMeta =
                             | DryRun -> output.Message $"  ├────> <c:yellow>Rename</c> file <c:cyan>{toRename.Original.Name |> FileName.value}</c> to <c:yellow>{toRename.Renamed.Name |> FileName.value}</c>"
                             | Execute -> do! toRename |> File.replace
                         }
-                        <@> RuntimeError
                         |> Async.tee (ignore >> renameFilesProgress.Advance)
-                        |> AsyncResult.teeError ((fun e -> logger.LogError("Rename file {file} failed with {error}", toRename, e)) >> renameFilesProgress.Advance)
+                        |> AsyncResult.teeError (fun e -> logger.LogError("Rename file {file} failed with {error}", toRename, e))
+                        <@> RuntimeError
                     )
                     |> tee (List.length >> sprintf "  ├──> <c:yellow>Renaming files</c>[<c:magenta>%i</c>] <c:yellow>in parallel</c> ..." >> output.Message)
                     |> tee (List.length >> renameFilesProgress.Start)
@@ -427,19 +427,13 @@ module RenameImageByMeta =
                 return ()
             }
 
-    let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg executeMode target: AsyncResult<string, RenameError list> = asyncResult {
+    let private run dependencies ffmpeg target: AsyncResult<string, RenameError list> = asyncResult {
+        let (_, output) = dependencies.IO
         let! files =
             target
-            |> Finder.findAllFilesInDir io loggerFactory ffmpeg <@> List.map PrepareError
+            |> Finder.findAllFilesInDir dependencies.IO dependencies.LoggerFactory ffmpeg <@> List.map PrepareError
 
         output.NewLine()
-
-        let dependencies = {
-            IO = io
-            LoggerFactory = loggerFactory
-            ExecuteMode = executeMode
-        }
-
         output.Message $"Rename files in <c:cyan>{target}</c> ..."
 
         let! preparedRenames = files |> PrepareRenames.run dependencies
@@ -484,7 +478,13 @@ module RenameImageByMeta =
 
             let target = input |> Input.Argument.value "target"
 
-            let! message = target |> run (input, output) loggerFactory ffmpeg executeMode
+            let dependencies = {
+                IO = (input, output)
+                LoggerFactory = loggerFactory
+                ExecuteMode = executeMode
+            }
+
+            let! message = target |> run dependencies ffmpeg
 
             output.Success message
 

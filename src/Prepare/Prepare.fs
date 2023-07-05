@@ -75,7 +75,7 @@ module Prepare =
 
                     else
                         let hash = Hash.calculate fileType metadata
-                        let extension = name |> Extension.fromPath
+                        let extension = name |> Extension.correctFromPath output metadata
                         let hashName = sprintf "%s%s" (hash |> Hash.value) (extension |> Extension.value)
 
                         let hashedFile = Target {

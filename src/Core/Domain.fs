@@ -45,7 +45,14 @@ type MetaAttribute =
     /// example: +49.6196+018.2302+478.329/
     /// other: https://www.codeproject.com/Articles/151869/Parsing-Latitude-and-Longitude-Information
     | GpsIso6709
+    | MajorBrand
     | Other
+
+[<RequireQualifiedAccess>]
+module MetaAttributeValue =
+    let [<Literal>] MajorBrandHeic = "heic"
+
+type Metadata = Map<MetaAttribute, string>
 
 type FullPath =
     FullPath of string
@@ -66,12 +73,16 @@ module FullPath =
 
 [<AutoOpen>]
 module ExtensionModule =
+    open MF.ConsoleApplication
+
     /// File extension, including a leading "."
     type Extension = private Extension of string
 
     [<RequireQualifiedAccess>]
     module Extension =
         open System.IO
+        let [<Literal>] JPEG = ".jpeg"
+        let [<Literal>] HEIC = ".heic"
 
         let private create (extension: string) =
             extension.Trim().ToLower() |> Extension
@@ -81,8 +92,26 @@ module ExtensionModule =
             | withoutLeadingDot when withoutLeadingDot.StartsWith('.') |> not -> None
             | ext -> Some (create ext)
 
-        let fromPath (path: string) =
+        let currentFromPath (path: string) =
             path |> Path.GetExtension |> create
+
+        let correctFromPath (output: Output) (meta: Metadata) (path: string) =
+            match path |> Path.GetExtension |> create, meta |> Map.tryFind MajorBrand with
+            | Extension HEIC as ext, Some MetaAttributeValue.MajorBrandHeic ->
+                if output.IsVeryVerbose() then output.Message("[HEIC][OK](%A) %A", ext, path)
+                Extension HEIC
+
+            | Extension HEIC as ext, None ->
+                if output.IsVeryVerbose() then output.Message("[HEIC][ERR: heic->jpeg](%A) %A", ext, path)
+                Extension JPEG
+
+            | Extension notHeic as ext, Some MetaAttributeValue.MajorBrandHeic when notHeic <> HEIC ->
+                if output.IsVeryVerbose() then output.Message("[HEIC][ERR: %s->heic](%A) %A", notHeic, ext, path)
+                Extension HEIC
+
+            | ext, _ ->
+                if output.IsVeryVerbose() then output.Message("[EXT][default](%A) %A", ext, path)
+                ext
 
         let value (Extension ext) = ext
 
@@ -148,7 +177,7 @@ type FileType =
 [<RequireQualifiedAccess>]
 module FileType =
     let determine (path: string) =
-        match path |> Extension.fromPath with
+        match path |> Extension.currentFromPath with
         | extension when extension |> Video.isVideoExtension -> Some Video
         | extension when extension |> Image.isImageExtension -> Some Image
 
@@ -193,8 +222,6 @@ module FileToCopy =
 module FileMetadata =
     open MF.Utils.ConcurrentCache
 
-    type private Metadata = Map<MetaAttribute, string>
-
     let private cache: Cache<FullPath, Metadata> = Cache.empty()
 
     let loadAsync (output: MF.ConsoleApplication.Output) (file: File) = asyncResult {
@@ -224,6 +251,7 @@ module FileMetadata =
 
 [<RequireQualifiedAccess>]
 module private Crypt =
+    (*
     open System.Text
     open System.Security.Cryptography
 
@@ -235,11 +263,12 @@ module private Crypt =
         |> String.replace "-" ""
         |> String.toLower
 
+    // HashAlgorithm.Create is deprecated, and currently not used - so it is simply disabled ATM
     let private hashBy alg = hash (HashAlgorithm.Create(alg).ComputeHash)
 
     let sha1 = hashBy "SHA1"
     let sha256 = hashBy "SHA256"
-    let md5 = hashBy "MD5"
+    let md5 = hashBy "MD5" *)
 
     let crc32 = Crc32.crc32OfString
 
@@ -453,7 +482,12 @@ module MetaAttribute =
     let [<Literal>] KeyGpsLongitude = "GPS Longitude"
     let [<Literal>] KeyGpsAltitude = "GPS Altitude"
     let [<Literal>] KeyGpsIso6709 = "GPS ISO6709"
+    let [<Literal>] KeyMajorBrand = "Major Brand"
     let [<Literal>] KeyOther = "Other"
+
+    let [<Literal>] DirGPS = "GPS"
+    let [<Literal>] DirJpeg = "JPEG"
+    let [<Literal>] DirQuickTimeFileType = "QuickTime File Type"
 
     let value = function
         | CreatedAt -> KeyCreatedAt
@@ -462,6 +496,7 @@ module MetaAttribute =
         | GpsLongitude -> KeyGpsLongitude
         | GpsAltitude -> KeyGpsAltitude
         | GpsIso6709 -> KeyGpsIso6709
+        | MajorBrand -> KeyMajorBrand
         | Other -> KeyOther
 
 [<RequireQualifiedAccess>]
