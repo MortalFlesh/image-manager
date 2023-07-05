@@ -21,7 +21,7 @@ module MetaData =
                 |> Seq.tryFind (fun t -> t.HasName && t.Name = tag)
             )
 
-        let forImage output (file: string) =
+        let forImage (output: Output) (file: string) =
             try
                 file
                 |> ImageMetadataReader.ReadMetadata
@@ -35,7 +35,7 @@ module MetaData =
         open MediaToolkit.Services
         open MediaToolkit.Tasks
 
-        let forVideo output ffmpegPath path = async {
+        let forVideo (output: Output) ffmpegPath path = async {
             try
                 let cwd = Directory.GetCurrentDirectory()
                 let (/) a b = Path.Combine(a, b)

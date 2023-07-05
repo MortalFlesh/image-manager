@@ -1,8 +1,9 @@
 namespace MF.ImageManager.Command
 
 open System.IO
-open MF.ConsoleApplication
+open ErrorHandling
 open MF.ImageManager
+open MF.ConsoleApplication
 
 [<RequireQualifiedAccess>]
 module PrepareCommand =
@@ -22,29 +23,29 @@ module PrepareCommand =
         Option.optional "config" (Some "c") "If set, config file will be used (other options set directly, will override a config values)." None
     ]
 
-    let execute ((input, output): IO) =
-        let source = input |> Input.getOptionValueAsList "source"
-        let target = input |> Input.getArgumentValue "target"
+    let execute = ExecuteResult <| fun (input, output) -> result {
+        let source = input |> Input.Option.asList "source"
+        let target = input |> Input.Argument.value "target"
         let exclude =
             match input with
-            | Input.HasOption "exclude" _ ->
-                input |> Input.getOptionValueAsList "exclude"
+            | Input.Option.Has "exclude" _ ->
+                input |> Input.Option.asList "exclude"
             | _ -> []
         let excludeList =
             match input with
-            | Input.HasOption "exclude-list" _ ->
-                input |> Input.getOptionValueAsString "exclude-list"
+            | Input.Option.Has "exclude-list" _ ->
+                input |> Input.Option.asString "exclude-list"
             | _ -> None
 
         let config =
             let targetDirMode =
                 match input with
-                | Input.IsSetOption "force" _ -> Override
-                | Input.IsSetOption "dry-run" _ -> DryRun
+                | Input.Option.IsSet "force" _ -> Override
+                | Input.Option.IsSet "dry-run" _ -> DryRun
                 | _ -> Exclude
 
             match input with
-            | Input.HasOption "config" (OptionValue.ValueOptional (Some config)) ->
+            | Input.Option.Has "config" (OptionValue.ValueOptional (Some config)) ->
                 config
                 |> File.ReadAllText
                 |> PrepareForSorting.parse targetDirMode
@@ -56,13 +57,13 @@ module PrepareCommand =
                 TargetDirMode = targetDirMode
                 TargetSubdir =
                     match input, input with
-                    | Input.IsSetOption "year" _, Input.IsSetOption "month" _ -> ByYearAndMonth
-                    | Input.IsSetOption "year" _, _ -> ByYear
-                    | Input.IsSetOption "month" _, _ -> ByMonth
+                    | Input.Option.IsSet "year" _, Input.Option.IsSet "month" _ -> ByYearAndMonth
+                    | Input.Option.IsSet "year" _, _ -> ByYear
+                    | Input.Option.IsSet "month" _, _ -> ByMonth
                     | _ -> Flat
                 TargetSubdirFallback =
                     match input with
-                    | Input.HasOption "fallback" fallback -> fallback |> OptionValue.stringValue
+                    | Input.Option.Has "fallback" fallback -> fallback |> OptionValue.stringValue
                     | _ -> None
                 Exclude =
                     match exclude with
@@ -85,12 +86,18 @@ module PrepareCommand =
         output.Section <| sprintf "Prepare images to %s" target
         output.Message <| sprintf "From:\n - %s" (source |> String.concat "\n - ")
 
-        config
-        |> Prepare.prepareForSorting output
-        |> function
+        let! message =
+            config
+            |> Prepare.prepareForSorting output
+
+        output.Success message
+        (* |> function
             | Ok message ->
                 output.Success message
                 ExitCode.Success
             | Error message ->
                 output.Error message
-                ExitCode.Error
+                ExitCode.Error *)
+
+        return ExitCode.Success
+    }

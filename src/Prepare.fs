@@ -129,7 +129,7 @@ module Prepare =
         |> Async.Parallel
         |> Async.map (Seq.toList)
 
-    let prepareForSorting output prepare =
+    let prepareForSorting (output: Output) prepare =
         Directory.CreateDirectory(prepare.Target) |> ignore
 
         output.NewLine()
