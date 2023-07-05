@@ -1,10 +1,10 @@
-framework: net5.0
+framework: net6.0
 storage: none
 
 source https://api.nuget.org/v3/index.json
-nuget FSharp.Core ~> 5.0
+nuget FSharp.Core ~> 6.0
 nuget FSharp.Data ~> 4.0
-nuget MF.ConsoleApplication ~> 2.0
+nuget MF.ConsoleApplication ~> 4.3
 nuget MetadataExtractor ~> 2.4
 nuget MediaToolkit
 nuget MediaToolkit.NetCore

@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
-        dotnet: [5.0.100-rc.2.20479.15]
+        dotnet: [6.0.408]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -31,7 +31,7 @@ jobs:
   tests:
     strategy:
       matrix:
-        dotnet: [5.0.100-rc.2.20479.15]
+        dotnet: [6.0.408]
     runs-on: macos-latest
 
     steps:

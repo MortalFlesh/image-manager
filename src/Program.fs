@@ -7,8 +7,14 @@ open MF.ImageManager
 [<EntryPoint>]
 let main argv =
     consoleApplication {
-        title "Image Manager"
+        title AssemblyVersionInformation.AssemblyProduct
+        name AssemblyVersionInformation.AssemblyProduct
+        description AssemblyVersionInformation.AssemblyDescription
         info ApplicationInfo.MainTitle
+        version AssemblyVersionInformation.AssemblyFileVersion
+
+        gitBranch AssemblyVersionInformation.AssemblyMetadata_gitbranch
+        gitCommit AssemblyVersionInformation.AssemblyMetadata_gitcommit
 
         command "prepare" {
             Description = "Prepares images for sorting"
@@ -18,40 +24,6 @@ let main argv =
             Initialize = None
             Interact = None
             Execute = Command.PrepareCommand.execute
-        }
-
-        command "about" {
-            Description = "Displays information about the current project."
-            Help = None
-            Arguments = []
-            Options = []
-            Initialize = None
-            Interact = None
-            Execute = fun (_input, output) ->
-                let ``---`` = [ "------------------"; "----------------------------------------------------------------------------------------------" ]
-
-                output.Table [ AssemblyVersionInformation.AssemblyProduct ] [
-                    [ "Description"; AssemblyVersionInformation.AssemblyDescription ]
-                    [ "Version"; AssemblyVersionInformation.AssemblyVersion ]
-
-                    ``---``
-                    [ "Environment" ]
-                    ``---``
-                    [ ".NET Core"; Environment.Version |> sprintf "%A" ]
-                    [ "Command Line"; Environment.CommandLine ]
-                    [ "Current Directory"; Environment.CurrentDirectory ]
-                    [ "Machine Name"; Environment.MachineName ]
-                    [ "OS Version"; Environment.OSVersion |> sprintf "%A" ]
-                    [ "Processor Count"; Environment.ProcessorCount |> sprintf "%A" ]
-
-                    ``---``
-                    [ "Git" ]
-                    ``---``
-                    [ "Branch"; AssemblyVersionInformation.AssemblyMetadata_gitbranch ]
-                    [ "Commit"; AssemblyVersionInformation.AssemblyMetadata_gitcommit ]
-                ]
-
-                ExitCode.Success
         }
     }
     |> run argv
