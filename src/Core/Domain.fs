@@ -349,7 +349,7 @@ module Hash =
         open MF.Utils.Progress
         open MF.Utils.ConcurrentCache
 
-        let private cache: Cache<FullPath, Hash> = Cache.empty()
+        let private cache: Cache<FullPath, Hash * Extension> = Cache.empty()
         let private cachePath = "./.hash-cache.txt"
 
         let load (loggerFactory: ILoggerFactory): AsyncResult<unit, PrepareError> =
@@ -359,7 +359,10 @@ module Hash =
                 lines
                 |> Seq.iter (function
                     | null | "" -> ()
-                    | Regex @"^(.*):(.*?)$" [ fullPath; hash ] -> cache |> Cache.set (Key (FullPath fullPath)) (Hash hash)
+                    | Regex @"^(.*):(.*?)(\..+)$" [ fullPath; hash; ext ] ->
+                        match Extension.ofParsed ext with
+                        | Some ext -> cache |> Cache.set (Key (FullPath fullPath)) (Hash hash, ext)
+                        | _ -> ()
                     | _ -> ()
                 )
 
@@ -384,8 +387,8 @@ module Hash =
             let lines =
                 cache
                 |> Cache.items
-                |> List.map (fun (Key path, (Hash hash)) ->
-                    sprintf "%s:%s" path.Value hash
+                |> List.map (fun (Key path, ((Hash hash), ext)) ->
+                    sprintf "%s:%s%s" path.Value hash (ext |> Extension.value)
                 )
                 |> List.sort
 
@@ -427,14 +430,14 @@ module Hash =
                     true
                 | _ -> false
 
-            let! (hashes: (FullPath * Hash) list) =
+            let! (hashes: (FullPath * Hash * Extension) list) =
                 files
                 |> List.filter (fun file -> file.FullPath |> Key |> keys.Contains |> not)
                 |> List.choose (function
                     | { Name = Hashed _ } when not initHashed -> None
 
-                    | { FullPath = path; Name = Hashed (hash, _) } ->
-                        Some (path, hash)
+                    | { FullPath = path; Name = Hashed (hash, extension) } ->
+                        Some (path, hash, extension)
                         |> AsyncResult.ofSuccess
                         |> Some
 
@@ -449,8 +452,9 @@ module Hash =
                                 return None
                             else
                                 let hash = calculate fileType metadata
+                                let extension = file.FullPath.Value |> Extension.correctFromPath output metadata
                                 debugMessage <| sprintf "Calculated hash for </c><c:cyan>%A</c><c:dark-yellow> is </c><c:magenta>%A</c><c:dark-yellow>" path hash
-                                return Some (path, hash)
+                                return Some (path, hash, extension)
                         }
 
                         Some (getHash |> AsyncResult.retry 5 |> AsyncResult.bindError (fun _ -> AsyncResult.ofSuccess None))
@@ -463,8 +467,8 @@ module Hash =
 
             output.Message $"Set hashes [{hashes.Length}] to cache ..."
             hashes
-            |> List.iter (fun (path, hash) ->
-                cache |> Cache.set (Key path) hash
+            |> List.iter (fun (path, hash, extension) ->
+                cache |> Cache.set (Key path) (hash, extension)
             )
 
             do! persistCache output |> AsyncResult.mapError List.singleton
@@ -472,7 +476,7 @@ module Hash =
             return ()
         }
 
-        let tryFind fullPath: Hash option =
+        let tryFind fullPath: (Hash * Extension) option =
             cache |> Cache.tryFind (Key fullPath)
 
 [<RequireQualifiedAccess>]
