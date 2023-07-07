@@ -26,6 +26,7 @@ module RenameImageByMeta =
     let options = CommonOptions.all @ [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and filess will only be sent to stdout."
         Option.noValue CommonOptions.ReHashAgain None "Whether to re-hash already hashed files in again."
+        Option.noValue "clear-cache" None "If set, processed items will be cleared from cache."
     ]
 
     type RenameFile = {
@@ -174,22 +175,25 @@ module RenameImageByMeta =
             | { Name = Hashed _ } when not rehash -> None
             | file -> Some (hashFile output file)
 
-        let replace { Original = original; Renamed = renamed } = async {
+        let replace clearFromCache { Original = original; Renamed = renamed } = async {
             let newPath = renamed.FullPath.Value
             newPath |> Path.GetDirectoryName |> Directory.ensure
 
             File.Move(original.FullPath.Value, newPath, false)
+            FullPath newPath |> ProcessedItems.add clearFromCache
         }
 
-        let move (toMove: FileToMove) = async {
+        let move clearFromCache (toMove: FileToMove) = async {
             let targetDir, targetPath = toMove.Target
             targetDir |> Directory.ensure
 
             File.Move(toMove.FullPath.Value, targetPath)
+            FullPath targetPath |> ProcessedItems.add clearFromCache
         }
 
-        let remove (FileToRemove file) = async {
+        let remove clearFromCache (FileToRemove file) = async {
             File.Delete(file.FullPath.Value)
+            file.FullPath |> ProcessedItems.add clearFromCache
         }
 
     type TaskDependencies = {
@@ -342,7 +346,7 @@ module RenameImageByMeta =
 
     [<RequireQualifiedAccess>]
     module private Rename =
-        let run: RunTask<RenameFile, unit> =
+        let run clearFromCache: RunTask<RenameFile, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToRename -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Rename files")
                 let renameFilesProgress = new Progress(io, "Rename files")
@@ -353,7 +357,7 @@ module RenameImageByMeta =
                         asyncResult {
                             match executeMode with
                             | DryRun -> output.Message $"  ├────> <c:yellow>Rename</c> file <c:cyan>{toRename.Original.Name |> FileName.value}</c> to <c:yellow>{toRename.Renamed.Name |> FileName.value}</c>"
-                            | Execute -> do! toRename |> File.replace
+                            | Execute -> do! toRename |> File.replace clearFromCache
                         }
                         |> Async.tee (ignore >> renameFilesProgress.Advance)
                         |> AsyncResult.teeError (fun e -> logger.LogError("Rename file {file} failed with {error}", toRename, e))
@@ -371,7 +375,7 @@ module RenameImageByMeta =
 
     [<RequireQualifiedAccess>]
     module private Move =
-        let run: RunTask<FileToMove, unit> =
+        let run clearFromCache: RunTask<FileToMove, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToMove -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Move files to subdir")
                 let moveFilesProgress = new Progress(io, "Move files to subdir")
@@ -382,7 +386,7 @@ module RenameImageByMeta =
                         asyncResult {
                             match executeMode with
                             | DryRun -> output.Message $"  ├────> <c:cyan>Move</c> file <c:cyan>{toMove.Name |> FileName.value}</c> from <c:gray>{toMove.FullPath}</c> to <c:cyan>{toMove.Target |> snd}</c>"
-                            | Execute -> do! toMove |> File.move
+                            | Execute -> do! toMove |> File.move clearFromCache
                         }
                         <@> RuntimeError
                         |> AsyncResult.tee moveFilesProgress.Advance
@@ -400,7 +404,7 @@ module RenameImageByMeta =
 
     [<RequireQualifiedAccess>]
     module private Remove =
-        let run: RunTask<FileToRemove, unit> =
+        let run clearFromCache: RunTask<FileToRemove, unit> =
             fun { IO = ((_, output) as io); ExecuteMode = executeMode; LoggerFactory = loggerFactory } filesToRemove -> asyncResult {
                 let logger = loggerFactory.CreateLogger("Remove files")
                 let removeFilesProgress = new Progress(io, "Remove files")
@@ -411,7 +415,7 @@ module RenameImageByMeta =
                         asyncResult {
                             match executeMode with
                             | DryRun -> output.Message $"  ├────> <c:red>Remove</c> file <c:cyan>{toRemove.Name |> FileName.value}</c> at <c:gray>{toRemove.FullPath}</c>"
-                            | Execute -> do! toRemove |> File.remove
+                            | Execute -> do! toRemove |> File.remove clearFromCache
                         }
                         <@> RuntimeError
                         |> AsyncResult.tee removeFilesProgress.Advance
@@ -427,7 +431,7 @@ module RenameImageByMeta =
                 return ()
             }
 
-    let private run dependencies ffmpeg target: AsyncResult<string, RenameError list> = asyncResult {
+    let private run dependencies ffmpeg clearCache target: AsyncResult<string, RenameError list> = asyncResult {
         let (_, output) = dependencies.IO
         let! files =
             target
@@ -439,15 +443,42 @@ module RenameImageByMeta =
         let! preparedRenames = files |> PrepareRenames.run dependencies
         let! analyzedResult = preparedRenames |> Analyze.run dependencies
 
+        let clearFromCache = ProcessedItems.create()
+
         do!
             [
-                analyzedResult.ToRename |> Rename.run dependencies
-                analyzedResult.ToMove |> Move.run dependencies
-                analyzedResult.ToRemove |> Remove.run dependencies
+                analyzedResult.ToRename |> Rename.run clearFromCache dependencies
+                analyzedResult.ToMove |> Move.run clearFromCache dependencies
+                analyzedResult.ToRemove |> Remove.run clearFromCache dependencies
             ]
             |> AsyncResult.ofSequentialAsyncResults (RuntimeError >> List.singleton)
             |> AsyncResult.mapError List.concat
-            |> AsyncResult.map ignore
+            |> AsyncResult.ignore
+
+        if clearCache then
+            output.NewLine()
+            output.SubTitle "Clear processed items from cache"
+            use cacheClearProgress =
+                clearFromCache
+                |> ProcessedItems.count
+                |> output.ProgressStart "Clear processed items from cache"
+
+            do!
+                clearFromCache
+                |> ProcessedItems.getAll
+                |> Seq.toList
+                |> List.map (fun path -> asyncResult {
+                    do! path |> Hash.Cache.clearItem |> AsyncResult.mapError PrepareError
+                    cacheClearProgress.Advance()
+                })
+                |> AsyncResult.ofParallelAsyncResults RuntimeError
+                |> AsyncResult.ignore
+
+            cacheClearProgress.Finish()
+
+            do! Hash.Cache.persistCache output |> AsyncResult.mapError (PrepareError >> List.singleton)
+
+        clearFromCache |> ProcessedItems.clear
 
         return "Done"
     }
@@ -473,6 +504,17 @@ module RenameImageByMeta =
                 |> AsyncResult.ofResult
                 |> AsyncResult.mapError (PrepareError >> List.singleton)
 
+            let! clearCache =
+                match input with
+                | Input.Option.IsSet "clear-cache" _ ->
+                    asyncResult {
+                        do! Hash.Cache.load loggerFactory
+                            |> AsyncResult.mapError (PrepareError >> List.singleton)
+                        output.Success "Note: Cache for hashes is loaded."
+                        return true
+                    }
+                | _ -> AsyncResult.ofSuccess false
+
             if output.IsVerbose() then
                 output.Message <| sprintf "FFMpeg: %A" ffmpeg
 
@@ -484,7 +526,7 @@ module RenameImageByMeta =
                 ExecuteMode = executeMode
             }
 
-            let! message = target |> run dependencies ffmpeg
+            let! message = target |> run dependencies ffmpeg clearCache
 
             output.Success message
 

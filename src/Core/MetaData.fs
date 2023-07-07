@@ -195,6 +195,11 @@ module MetaData =
 
                             | _ -> None
                         )
+                        |> List.groupBy fst
+                        |> List.collect (function
+                            | CreatedAt, values -> values |> List.sortBy snd |> List.head |> List.singleton // find the oldest date
+                            | (_, values) -> values
+                        )
                 }
 
         return

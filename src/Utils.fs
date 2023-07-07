@@ -22,10 +22,12 @@ module CommonOptions =
         imageOnlyOption
     ]
 
+[<System.Obsolete("Use it from ConsoleApplication")>]
 module internal Progress =
     open System
     open MF.ConsoleApplication
 
+    [<Obsolete("Use it from ConsoleApplication")>]
     type Progress (io: MF.ConsoleApplication.IO, name: string) =
         let (input, output) = io
         let mutable progressBar: _ option = None
@@ -360,8 +362,34 @@ module Crc32 =
     //CRC32 from ASCII string
     let crc32OfString = crc32OfAscii >> sprintf "%x"
 
+[<System.Obsolete("Use from ConsoleApplication")>]
 module CommandHelp =
     let commandHelp lines = lines |> String.concat "\n\n" |> Some
 
     /// Concat two lines into one line for command help, so they won't be separated by other empty line
     let inline (<+>) line1 line2 = sprintf "%s\n%s" line1 line2
+
+[<RequireQualifiedAccess>]
+module internal ProcessedItems =
+    open System.Collections.Concurrent
+
+    type private Storage<'Item> = ConcurrentQueue<'Item>
+    type ProcessedItems<'Item> = private ProcessedItems of Storage<'Item>
+
+    let create<'Item> () =
+        Storage<'Item>() |> ProcessedItems
+
+    let add<'Item> (ProcessedItems storage) (item: 'Item) =
+        storage.Enqueue item
+
+    let count: ProcessedItems<'Item> -> int = fun (ProcessedItems storage) ->
+        storage.Count
+
+    let clear: ProcessedItems<'Item> -> unit = fun (ProcessedItems storage) ->
+        storage.Clear()
+
+    let getAll<'Item> (ProcessedItems storage): 'Item seq =
+        storage.GetEnumerator()
+        |> Seq.unfold (fun e ->
+            if e.MoveNext() then Some (e.Current, e) else None
+        )

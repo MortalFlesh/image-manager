@@ -379,6 +379,31 @@ module Hash =
                 return! AsyncResult.ofError (PrepareError.Exception e)
         }
 
+        let persistCache (output: Output) = asyncResult {
+            output.Message $"Write current cache [{cache |> Cache.length}] ..."
+            let lines =
+                cache
+                |> Cache.items
+                |> List.map (fun (Key path, (Hash hash)) ->
+                    sprintf "%s:%s" path.Value hash
+                )
+                |> List.sort
+
+            if output.IsDebug() then output.Message " -> Remove current cache file ..."
+            File.Delete cachePath
+
+            if output.IsDebug() then output.Message " -> Persist cache to file ..."
+            do! File.WriteAllLinesAsync(cachePath, lines) |> AsyncResult.ofEmptyTaskCatch PrepareError.Exception
+        }
+
+        let clearItem path: AsyncResult<unit, PrepareError> = asyncResult {
+            try
+                cache |> Cache.tryRemove (Key path)
+                File.Delete cachePath
+            with e ->
+                return! AsyncResult.ofError (PrepareError.Exception e)
+        }
+
         let init ((input, output: MF.ConsoleApplication.Output) as io) (loggerFactory: ILoggerFactory) (files: File list): AsyncResult<unit, PrepareError list> = asyncResult {
             let logger = loggerFactory.CreateLogger("Cache.init")
             let debugMessage message =
@@ -440,16 +465,7 @@ module Hash =
                 cache |> Cache.set (Key path) hash
             )
 
-            output.Message $"Write current cache [{cache |> Cache.length}] ..."
-            let lines =
-                cache
-                |> Cache.items
-                |> List.map (fun (Key path, (Hash hash)) ->
-                    sprintf "%s:%s" path.Value hash
-                )
-                |> List.sort
-
-            do! File.WriteAllLinesAsync(cachePath, lines) |> AsyncResult.ofEmptyTaskCatch (PrepareError.Exception >> List.singleton)
+            do! persistCache output |> AsyncResult.mapError List.singleton
 
             return ()
         }

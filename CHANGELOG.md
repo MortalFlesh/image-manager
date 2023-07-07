@@ -10,6 +10,7 @@
 - Use net6.0
 - Log warnings and errors to file
 - Add cache for hashes
+- Allow to clear cache in rename command for processed items
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation
