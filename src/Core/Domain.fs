@@ -389,8 +389,10 @@ module Hash =
                 )
                 |> List.sort
 
-            if output.IsDebug() then output.Message " -> Remove current cache file ..."
-            File.Delete cachePath
+            if cachePath |> File.Exists then
+                if output.IsDebug() then output.Message " -> Remove current cache file ..."
+                try File.Delete cachePath
+                with e -> return! AsyncResult.ofError (PrepareError.Exception e)
 
             if output.IsDebug() then output.Message " -> Persist cache to file ..."
             do! File.WriteAllLinesAsync(cachePath, lines) |> AsyncResult.ofEmptyTaskCatch PrepareError.Exception
