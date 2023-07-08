@@ -203,6 +203,7 @@ type FileMetadata =
 
 type File = {
     Type: FileType
+    CacheKey: CacheKey
     Name: FileName
     FullPath: FullPath
     Metadata: FileMetadata
@@ -220,27 +221,39 @@ module FileToCopy =
 
 [<RequireQualifiedAccess>]
 module FileMetadata =
+    open MF.ConsoleApplication
     open MF.Utils.ConcurrentCache
 
-    let private cache: Cache<FullPath, Metadata> = Cache.empty()
+    let private cache: Cache<CacheKey, Metadata> = Cache.empty()
 
-    let loadAsync (output: MF.ConsoleApplication.Output) (file: File) = asyncResult {
+    let loadAsync ((input, output): MF.ConsoleApplication.IO) (file: File) = asyncResult {
         if output.IsDebug() then
             output.Message $"<c:dark-yellow>[Debug] Loading metadata for file {file.Name}</c>"
 
+        let debugCache =
+            let debugCache = input |> Input.Option.isValueSet CommonOptions.DebugCache
+            fun (CacheKey key) message -> if debugCache then output.Message ("<c:purple>[Cache]</c> File: <c:gray>%A</c> | %s", key, message)
+
         match file.Metadata with
         | FileMetadata.Lazy load ->
-            let key = Key file.FullPath
+            let key = Key file.CacheKey
+            let inCache = cache |> Cache.tryFind key
 
-            match cache |> Cache.tryFind key with
+            debugCache file.CacheKey (if inCache.IsSome then "<c:green>Found</c>" else "<c:red>Not found</c>")
+
+            match inCache with
             | Some cached ->
                 if output.IsDebug() then output.Message "  └──> Metadata loaded from cache"
                 return cached
             | _ ->
                 if output.IsDebug() then output.Message "  ├──> Load fresh Metadata ..."
+
                 let! fresh = load
                 if output.IsDebug() then output.Message "  ├──> Fresh Metadata are loaded"
+
                 cache |> Cache.set key fresh
+
+                debugCache file.CacheKey "<c:cyan>Stored</c>"
                 if output.IsDebug() then output.Message "  └──> Fresh Metadata stored in cache"
 
                 return fresh
@@ -419,8 +432,6 @@ module Hash =
             output.Message $"<c:green> -> Cache loaded with {cache |> Cache.length} items</c>"
 
             output.Message "Init hashes for files ..."
-            let progress = new Progress(io, "Init cache")
-
             let keys = cache |> Cache.keys |> Set.ofList
 
             let initHashed =
@@ -445,7 +456,7 @@ module Hash =
                         let getHash = asyncResult {
                             let! metadata =
                                 file
-                                |> FileMetadata.load output
+                                |> FileMetadata.load io
 
                             if metadata.IsEmpty then
                                 logger.LogWarning("File {file} has no metadata.", file)
@@ -459,11 +470,8 @@ module Hash =
 
                         Some (getHash |> AsyncResult.retry 5 |> AsyncResult.bindError (fun _ -> AsyncResult.ofSuccess None))
                 )
-                |> List.map (Async.tee (ignore >> progress.Advance))
-                |> tee (List.length >> progress.Start)
-                |> AsyncResult.handleMultipleResults output PrepareError.Exception
+                |> AsyncResult.handleMultipleResults io "Init cache" PrepareError.Exception
                 |> AsyncResult.map (List.choose id)
-            progress.Finish()
 
             output.Message $"Set hashes [{hashes.Length}] to cache ..."
             hashes

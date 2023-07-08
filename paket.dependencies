@@ -12,6 +12,9 @@ nuget System.Drawing.Common ~> 6.0
 nuget Microsoft.Extensions.Logging
 nuget NReco.Logging.File ~> 1.1
 
+nuget Expecto
+nuget YoloDev.Expecto.TestSdk
+
 // [ FAKE GROUP ]
 group Build
     storage none

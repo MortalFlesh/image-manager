@@ -38,6 +38,7 @@ module Finder =
 
                     Some {
                         Type = fileType
+                        CacheKey = CacheKey fullPath.Value
                         Name = name
                         FullPath = fullPath
                         Metadata = FileMetadata.Lazy loadMetadata
@@ -62,21 +63,17 @@ module Finder =
             |> AsyncResult.ofAsyncCatch (PrepareError.Exception >> List.singleton)
 
         output.Message $"Initializing found files [<c:magenta>{files.Length}</c>] from <c:cyan>{dir}</c>"
-        let progress = new Progress(io, "Initialize files")
 
         let createFiles =
             files
             |> List.map (
                 File.createAsync io loggerFactory ffmpeg
                 >> AsyncResult.ofAsyncCatch PrepareError.Exception
-                >> Async.tee (ignore >> progress.Advance)
             )
 
         let! files =
             createFiles
-            |> tee (List.length >> progress.Start)
-            |> AsyncResult.handleMultipleResults output PrepareError.Exception
-            |> Async.tee (ignore >> progress.Finish)
+            |> AsyncResult.handleMultipleResults io "Initialize files" PrepareError.Exception
 
         return
             files

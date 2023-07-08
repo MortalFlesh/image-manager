@@ -130,7 +130,6 @@ let initTargets () =
 
     Target.create "Build" (fun _ ->
         ProjectSources.all
-        //|> Seq.iter (DotNet.build id)
         |> Seq.iter (Path.getDirectory >> Dotnet.runOrFail "build")
     )
 

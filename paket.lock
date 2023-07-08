@@ -20,6 +20,9 @@ NUGET
       Colorful.Console (>= 1.2.15 < 2.0)
       FSharp.Core (>= 7.0 < 8.0)
       ShellProgressBar (>= 5.2 < 6.0)
+    Expecto (10.1)
+      FSharp.Core (>= 7.0.200)
+      Mono.Cecil (>= 0.11.4 < 1.0)
     FSharp.Core (7.0.300)
     FSharp.Data (4.2.10)
       FSharp.Core (>= 5.0.1)
@@ -75,6 +78,7 @@ NUGET
     Microsoft.NETCore.Platforms (5.0.2)
     Microsoft.NETCore.Targets (5.0)
     Microsoft.Win32.SystemEvents (6.0)
+    Mono.Cecil (0.11.5)
     NReco.Logging.File (1.1.6)
       Microsoft.Extensions.Logging (>= 2.0)
       Microsoft.Extensions.Logging.Configuration (>= 2.0)
@@ -100,6 +104,7 @@ NUGET
       System.Runtime.Extensions (>= 4.3)
       System.Threading (>= 4.3)
       System.Threading.Tasks (>= 4.3)
+    System.Collections.Immutable (7.0)
     System.Console (4.3.1)
       Microsoft.NETCore.Platforms (>= 1.1)
       Microsoft.NETCore.Targets (>= 1.1.2)
@@ -259,6 +264,10 @@ NUGET
       Microsoft.NETCore.Targets (>= 1.1)
       System.Runtime (>= 4.3)
     XmpCore (6.1.10.1)
+    YoloDev.Expecto.TestSdk (0.14.1)
+      Expecto (>= 10.0 < 11.0)
+      FSharp.Core (>= 7.0.200)
+      System.Collections.Immutable (>= 6.0)
 
 GROUP Build
 STORAGE: NONE

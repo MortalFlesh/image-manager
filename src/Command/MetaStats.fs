@@ -64,7 +64,7 @@ module MetaStatsCommand =
 
             files
             |> List.collect (fun i ->
-                let metadata = i |> FileMetadata.load output
+                let metadata = i |> FileMetadata.load io
 
                 let firstMeta, meta =
                     let format (k, v) =

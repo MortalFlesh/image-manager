@@ -57,21 +57,21 @@ module Prepare =
             }
         }
 
-        let useHashedFile (logger: ILogger) output config: File -> AsyncResult<FileToCopy, PrepareFilesError> = function
-            | { Name = Hashed _ } as alreadyHashedFile -> Target alreadyHashedFile |> createFileToCopy output config (Source alreadyHashedFile)
+        let useHashedFile (logger: ILogger) ((_, output) as io: IO) config: File -> AsyncResult<FileToCopy, PrepareFilesError> = function
+            | { Name = Hashed _ } as alreadyHashedFile -> Target alreadyHashedFile |> createFileToCopy io config (Source alreadyHashedFile)
 
             | { Name = Normal name; Type = fileType } as normalSourceFile ->
                 asyncResult {
                     let! (metadata: Map<MetaAttribute, string>) =
                         normalSourceFile
-                        |> FileMetadata.loadAsync output
+                        |> FileMetadata.loadAsync io
                         >>- (fun e ->
                             logger.LogWarning("There is a problem with loading metadata for file {file}: {error}", normalSourceFile, e)
                             AsyncResult.ofSuccess Map.empty
                         )
 
                     if metadata.IsEmpty then
-                        return! Target normalSourceFile |> createFileToCopy output config (Source normalSourceFile)
+                        return! Target normalSourceFile |> createFileToCopy io config (Source normalSourceFile)
 
                     else
                         let hash = Hash.calculate fileType metadata
@@ -85,10 +85,10 @@ module Prepare =
                                     FullPath = normalSourceFile.FullPath.Replace(name, hashName)
                         }
 
-                        return! hashedFile |> createFileToCopy output config (Source normalSourceFile)
+                        return! hashedFile |> createFileToCopy io config (Source normalSourceFile)
                 }
 
-    let private copyFiles ((_, output as io): MF.ConsoleApplication.IO) config filesToCopy = asyncResult {
+    let private copyFiles ((_, output as io): IO) config filesToCopy = asyncResult {
         let totalCount = filesToCopy |> List.length
         output.Message $"Copy files[<c:magenta>{totalCount}</c>]"
 
@@ -168,18 +168,15 @@ module Prepare =
                                 if output.IsDebug() then output.Success $"Using cached hash for file {file.Name}"
                                 return Some file
                             | _ ->
-                            match! file |> File.createdAtDateTimeAsync output with
+                            match! file |> File.createdAtDateTimeAsync io with
                             | Some createdAt when createdAt.Year = year && createdAt.Month = month -> return Some file
                             | _ -> return None
                         }
 
-                        use progress = new Progress(io, "Filter relevant files")
-
                         let! relevantFiles =
                             allSourceFiles
-                            |> List.map (filter >> Async.tee (ignore >> progress.Advance))
-                            |> tee (List.length >> progress.Start)
-                            |> AsyncResult.handleMultipleAsyncs output RuntimeError
+                            |> List.map filter
+                            |> AsyncResult.handleMultipleAsyncs io "Filter relevant files" RuntimeError
 
                         let relevantFiles = relevantFiles |> List.choose id
 
@@ -195,17 +192,10 @@ module Prepare =
 
         let useHashForFilesInSource (filesInSource: File list): SubTask<FileToCopy list> = fun { Config = config; IO = (_, output) as io; Logger = logger } -> asyncResult {
             output.SubTitle $"Use hash for files in source [{filesInSource.Length}]"
-            let useHashProgress = new Progress(io, "Use hash for files")
-
             let! hashedFilesInSource =
                 filesInSource
-                |> List.map (
-                    File.useHashedFile logger output config
-                    >> Async.tee (ignore >> useHashProgress.Advance)
-                )
-                |> tee (List.length >> useHashProgress.Start)
-                |> AsyncResult.handleMultipleResults output RuntimeError
-                |> Async.tee (ignore >> useHashProgress.Finish)
+                |> List.map (File.useHashedFile logger io config)
+                |> AsyncResult.handleMultipleResults io "Use hash for files" RuntimeError
 
             hashedFilesInSource |> List.length |> sprintf "  └──> hashed <c:magenta>%i</c> files" |> output.Message |> output.NewLine
 

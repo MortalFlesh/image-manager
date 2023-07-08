@@ -22,13 +22,13 @@ module FindSameImages =
         Option.optional "use-path" None "A part of an image full path, which should be kept in copping an same image." None
     ]
 
-    let private printImage (output: Output) image =
+    let private printImage ((_, output) as io: IO) image =
         output.Message $"Image <c:cyan>{image.Name |> FileName.value}</c>"
         output.Message $"  <c:gray>> {image.FullPath}</c>"
 
         if output.IsVerbose() then
             image
-            |> FileMetadata.load output
+            |> FileMetadata.load io
             |> function
                 | Ok meta -> meta
                 | Error _ -> Map.empty
@@ -37,7 +37,7 @@ module FindSameImages =
             |> List.map (fun (k, v) -> [ k |> MetaAttribute.value; v ])
             |> output.Table [ "Meta"; "Value" ]
 
-    let private printGroup (output: Output) name (group: SameImageGroup list) =
+    let private printGroup ((_, output) as io: IO) name (group: SameImageGroup list) =
         output.SubTitle $"Group {name}"
         match group with
         | [] -> output.Message "No items in this group."
@@ -46,7 +46,7 @@ module FindSameImages =
             |> List.iter (fun (groupKey, group) ->
                 output.Message $"Same image group by <c:cyan>{groupKey}</c>"
                 group
-                |> List.iter (printImage output)
+                |> List.iter (printImage io)
                 |> output.NewLine
             )
         output.NewLine()
@@ -129,7 +129,7 @@ module FindSameImages =
                                     $"     - {i.FullPath}"
                                     yield!
                                         i
-                                        |> FileMetadata.load output
+                                        |> FileMetadata.load io
                                         |> function
                                             | Ok meta -> meta
                                             | Error _ -> Map.empty
@@ -150,7 +150,7 @@ module FindSameImages =
                 )
             )
 
-    let private run ((_, output as io): MF.ConsoleApplication.IO) loggerFactory copyTo target = asyncResult {
+    let private run ((_, output as io): IO) loggerFactory copyTo target = asyncResult {
         let! images =
             target
             |> Finder.findAllFilesInDir io loggerFactory FFMpeg.empty
@@ -161,7 +161,7 @@ module FindSameImages =
 
             images
             |> List.sortBy File.name
-            |> List.iter (printImage output)
+            |> List.iter (printImage io)
 
         output.Section "Finding same images ..."
         let! sameImages =
@@ -171,10 +171,10 @@ module FindSameImages =
         match copyTo, output.IsVerbose() with
         | (None, _), _ | _, true ->
             output.Section "Same images"
-            sameImages.ByCompleteHash |> printGroup output "CompleteHash"
-            sameImages.ByDateTimeOriginal |> printGroup output "DateTimeOriginal"
-            sameImages.ByGps |> printGroup output "Gps"
-            sameImages.ByContent |> printGroup output "Content"
+            sameImages.ByCompleteHash |> printGroup io "CompleteHash"
+            sameImages.ByDateTimeOriginal |> printGroup io "DateTimeOriginal"
+            sameImages.ByGps |> printGroup io "Gps"
+            sameImages.ByContent |> printGroup io "Content"
         | _ -> ()
 
         copyTo

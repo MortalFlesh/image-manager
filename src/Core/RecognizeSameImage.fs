@@ -61,7 +61,7 @@ module RecognizeSameImage =
         use progress = new Progress(io, "Prepare images table")
         images
         |> tee (List.length >> progress.Start)
-        |> List.map (TableItem.create (io |> snd) >> tee (ignore >> progress.Advance))
+        |> List.map (TableItem.create io >> tee (ignore >> progress.Advance))
 
     let private findBy io name exclude (f: TableItem -> string) images =
         use progress = new Progress(io, $"Finding by {name}")
@@ -119,14 +119,11 @@ module RecognizeSameImage =
                 else e.Message
             | FileIsNotImage -> "File is not image"
 
-        let findImageContentProgress = new Progress(io, "Find images content hash.")
         let! imagesWithHash =
             output.Message $"Loading images..."
             images
-            |> List.map (ImageWithHash.fromImage output >> Async.tee (ignore >> findImageContentProgress.Advance))
-            |> tee (List.length >> findImageContentProgress.Start)
-            |> AsyncResult.handleMultipleResults output Runtime <@> List.map formatError
-            |> Async.tee (ignore >> findImageContentProgress.Finish)
+            |> List.map (ImageWithHash.fromImage output)
+            |> AsyncResult.handleMultipleResults io "Find images content hash." Runtime <@> List.map formatError
 
         if output.IsDebug() then
             imagesWithHash

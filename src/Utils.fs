@@ -4,6 +4,7 @@ module CommonOptions =
     open MF.ConsoleApplication
 
     let [<Literal>] DebugMeta = "debug-meta"
+    let [<Literal>] DebugCache = "debug-cache"
     let [<Literal>] FFMpeg = "ffmpeg"
     let [<Literal>] OnlyVideo = "only-video"
     let [<Literal>] OnlyImage = "only-image"
@@ -11,23 +12,23 @@ module CommonOptions =
     let [<Literal>] ReHashAgain = "re-hash"
 
     let debugMetaOption = Option.noValue DebugMeta None "Whether to show all metadata for files."
+    let debugCacheOption = Option.noValue DebugCache None "Whether to show information about cache for files."
     let ffmpegOption = Option.optional FFMpeg None "FFMpeg path in the current dir" None
     let videoOnlyOption = Option.noValue OnlyVideo None "Whether to rename video files only"
     let imageOnlyOption = Option.noValue OnlyImage None "Whether to rename image files only"
 
     let all = [
         debugMetaOption
+        debugCacheOption
         ffmpegOption
         videoOnlyOption
         imageOnlyOption
     ]
 
-[<System.Obsolete("Use it from ConsoleApplication")>]
 module internal Progress =
     open System
     open MF.ConsoleApplication
 
-    [<Obsolete("Use it from ConsoleApplication")>]
     type Progress (io: MF.ConsoleApplication.IO, name: string) =
         let (input, output) = io
         let mutable progressBar: _ option = None
@@ -35,7 +36,9 @@ module internal Progress =
         member private __.IsEnabled() = true
 
         member _.Start(total: int) =
-            progressBar <- Some (output.ProgressStart name total)
+            let progress = output.ProgressStart name total
+            if progress.IsAvailable() then
+                progressBar <- Some progress
 
         member __.Advance() =
             progressBar |> Option.iter output.ProgressAdvance
@@ -51,6 +54,9 @@ module internal Progress =
 module FileSystem =
     open System.IO
     open MF.ConsoleApplication
+
+    module Operators =
+        let inline (</>) a b = Path.Combine(a, b)
 
     let rec getAllFiles = function
         | [] -> []
@@ -287,6 +293,8 @@ module String =
 [<RequireQualifiedAccess>]
 module AsyncResult =
     open MF.ErrorHandling
+    open Progress
+    type private IO = MF.ConsoleApplication.IO
 
     let rec retry attempts xA =
         if attempts > 0 then
@@ -300,23 +308,41 @@ module AsyncResult =
 
     let retryMultiple xA = xA |> List.map (retry 5)
 
-    let handleMultipleResultsBy sequential onError =
-        retryMultiple >> (
-            if sequential
-                then AsyncResult.ofSequentialAsyncResults onError
-                else AsyncResult.ofParallelAsyncResults onError
-        )
+    let handleMultipleResultsBy io taskName sequential onError tasks = asyncResult {
+        use progress = new Progress(io, taskName)
 
-    let handleMultipleResults (output: MF.ConsoleApplication.Output) =
-        handleMultipleResultsBy (output.IsDebug())
+        return!
+            tasks
+            |> List.map (Async.tee (ignore >> progress.Advance))
+            |> tee (List.length >> progress.Start)
+            |> retryMultiple
+            |> (
+                if sequential
+                    then AsyncResult.ofSequentialAsyncResults onError
+                    else AsyncResult.ofParallelAsyncResults onError
+            )
+    }
 
-    let handleMultipleAsyncsBy sequential =
-        if sequential
-            then AsyncResult.ofSequentialAsyncs
-            else AsyncResult.ofParallelAsyncs
+    let handleMultipleResults ((_, output) as io) taskName =
+        handleMultipleResultsBy io taskName (output.IsDebug())
 
-    let handleMultipleAsyncs (output: MF.ConsoleApplication.Output) =
-        handleMultipleAsyncsBy (output.IsDebug())
+    let handleMultipleAsyncsBy io taskName sequential onError tasks =
+        asyncResult {
+            use progress = new Progress(io, taskName)
+
+            return!
+                tasks
+                |> List.map (Async.tee (ignore >> progress.Advance))
+                |> tee (List.length >> progress.Start)
+                |> (
+                    if sequential
+                        then AsyncResult.ofSequentialAsyncs onError
+                        else AsyncResult.ofParallelAsyncs onError
+                )
+        }
+
+    let handleMultipleAsyncs ((_, output) as io: IO) taskName =
+        handleMultipleAsyncsBy io taskName (output.IsDebug())
 
     let waitAfterFinish (output: MF.ConsoleApplication.Output) sleepFor ar = asyncResult {
         let! result = ar

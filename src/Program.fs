@@ -4,9 +4,9 @@ open System
 open MF.ConsoleApplication
 open MF.ImageManager
 
-[<EntryPoint>]
-let main argv =
-    consoleApplication {
+[<RequireQualifiedAccess>]
+module ImageManager =
+    let app = consoleApplication {
         title AssemblyVersionInformation.AssemblyProduct
         name AssemblyVersionInformation.AssemblyProduct
         description AssemblyVersionInformation.AssemblyDescription
@@ -106,4 +106,8 @@ let main argv =
                 ExitCode.Success
         } *)
     }
+
+[<EntryPoint>]
+let main argv =
+    ImageManager.app
     |> run argv

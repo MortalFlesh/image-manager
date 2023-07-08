@@ -1,5 +1,7 @@
 namespace MF.Utils
 
+type CacheKey = CacheKey of string
+
 module internal ConcurrentCache =
     open System.Collections.Concurrent
 
