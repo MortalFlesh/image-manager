@@ -8,8 +8,10 @@ module CommonOptions =
     let [<Literal>] FFMpeg = "ffmpeg"
     let [<Literal>] OnlyVideo = "only-video"
     let [<Literal>] OnlyImage = "only-image"
+
     let [<Literal>] PreloadHashedAgain = "preload-hashed"
     let [<Literal>] ReHashAgain = "re-hash"
+    let [<Literal>] RootDir = "root-dir"
 
     let debugMetaOption = Option.noValue DebugMeta None "Whether to show all metadata for files."
     let debugCacheOption = Option.noValue DebugCache None "Whether to show information about cache for files."

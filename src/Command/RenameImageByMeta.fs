@@ -26,6 +26,7 @@ module RenameImageByMeta =
     let options = CommonOptions.all @ [
         Option.noValue "dry-run" None "If set, target directory will NOT be touched in anyway and files will only be sent to stdout."
         Option.noValue CommonOptions.ReHashAgain None "Whether to re-hash already hashed files in again."
+        Option.required CommonOptions.RootDir None "If set, it will be used as a base path for a target files as follows <c:cyan>{root}/{year}/{month}/{hash.extension}</c>." ""
         Option.noValue "clear-cache" None "If set, processed items will be cleared from cache."
     ]
 
@@ -78,7 +79,7 @@ module RenameImageByMeta =
         /// - root/2022/07/i_20220701_x.jpg (original file)
         /// - root/2022/07/i_20220504_x.jpg (hashed file)
         /// - root/2022/05/i_20220504_x.jpg (all correct)
-        let private correctNestedDirStructure ((_, output as io): IO) originalFile hashedFile = asyncResult {
+        let private correctNestedDirStructure ((input, output as io): IO) originalFile hashedFile = asyncResult {
             let debug msg = if output.IsDebug() then output.Message ("<c:gray>[Debug]</c> %s", msg)
 
             let! createdAt =
@@ -86,13 +87,12 @@ module RenameImageByMeta =
                 |> File.createdAtDateTimeAsync io
                 |> AsyncResult.ofAsyncCatch RuntimeError
 
+            let reversedPath (path: string) = path.Split Path.DirectorySeparatorChar |> List.ofArray |> List.rev
+
             return
                 match createdAt with
                 | Some (createdAt: DateTime) ->
-                    let originalPath =
-                        (originalFile.FullPath |> FullPath.value).Split Path.DirectorySeparatorChar
-                        |> List.ofArray
-                        |> List.rev
+                    let originalPath = originalFile.FullPath.Value |> reversedPath
 
                     let month = sprintf "%02i"
                     let placeholder value = sprintf "%c%s%c" Path.DirectorySeparatorChar value Path.DirectorySeparatorChar
@@ -114,13 +114,23 @@ module RenameImageByMeta =
 
                     | _fileName :: path ->
                         debug $"Create year/month structure for <c:cyan>{hashedFile.FullPath.Value}</c>"
+
+                        let basePath =
+                            input
+                            |> Input.Option.asString CommonOptions.RootDir
+                            |> Option.bind (function
+                                | root when root |> Directory.Exists -> root |> reversedPath |> Some
+                                | _ -> None
+                            )
+                            |> Option.defaultValue path
+
                         { hashedFile
                             with
                                 FullPath =
                                     (hashedFile.Name |> FileName.value)
                                     :: month createdAt.Month
                                     :: string createdAt.Year
-                                    :: path
+                                    :: basePath
                                     |> List.rev
                                     |> String.concat (string Path.DirectorySeparatorChar)
                                     |> FullPath
