@@ -12,6 +12,7 @@ module CommonOptions =
     let [<Literal>] PreloadHashedAgain = "preload-hashed"
     let [<Literal>] ReHashAgain = "re-hash"
     let [<Literal>] RootDir = "root-dir"
+    let [<Literal>] EvenCreateSubDir = "create-sub-dir-for-year-month"
 
     let debugMetaOption = Option.noValue DebugMeta None "Whether to show all metadata for files."
     let debugCacheOption = Option.noValue DebugCache None "Whether to show information about cache for files."
@@ -87,7 +88,7 @@ module FileSystem =
         IsImage: string -> bool
     }
 
-    let getAllFilesAsync ((input, output as io): MF.ConsoleApplication.IO) searchFiles is dir = async {
+    let getAllFilesAsync ((input, output): IO) searchFiles is dir = async {
         let prefix = "  <c:gray>[FileSystem] </c>"
         let ignoreDotFiles: FileFilter option =
             match searchFiles with

@@ -54,7 +54,7 @@ module Finder =
             return create io loggerFactory ffmpeg path
         }
 
-    let findAllFilesInDir ((_, output as io): MF.ConsoleApplication.IO) loggerFactory ffmpeg dir = asyncResult {
+    let findAllFilesInDir ((_, output as io): IO) loggerFactory ffmpeg dir = asyncResult {
         output.Message $"Searching for all files in <c:cyan>{dir}</c>"
 
         let! (files: string list) =

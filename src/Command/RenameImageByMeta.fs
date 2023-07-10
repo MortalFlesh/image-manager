@@ -28,6 +28,7 @@ module RenameImageByMeta =
         Option.noValue CommonOptions.ReHashAgain None "Whether to re-hash already hashed files in again."
         Option.required CommonOptions.RootDir None "If set, it will be used as a base path for a target files as follows <c:cyan>{root}/{year}/{month}/{hash.extension}</c>." ""
         Option.noValue "clear-cache" None "If set, processed items will be cleared from cache."
+        Option.noValue CommonOptions.EvenCreateSubDir None "Whether to correct path only for files which are already in the correct year/month subdir."
     ]
 
     type RenameFile = {
@@ -112,7 +113,7 @@ module RenameImageByMeta =
                                         .Replace(placeholder currentMonth, placeholder (month createdAt.Month))
                         }
 
-                    | _fileName :: path ->
+                    | _fileName :: path when input |> Input.Option.has CommonOptions.EvenCreateSubDir ->
                         debug $"Create year/month structure for <c:cyan>{hashedFile.FullPath.Value}</c>"
 
                         let basePath =
@@ -135,6 +136,10 @@ module RenameImageByMeta =
                                     |> String.concat (string Path.DirectorySeparatorChar)
                                     |> FullPath
                         }
+                    | _ ->
+                        debug $"No need to correct dir structure for <c:cyan>{hashedFile.FullPath.Value}</c>"
+                        hashedFile
+
                     |> tee (fun file -> debug $" -> Corrected path is <c:green>{file.FullPath.Value}</c>")
                 | _ -> hashedFile
         }

@@ -8,6 +8,7 @@ open MF.ConsoleApplication
 open MF.ImageManager
 open MF.ImageManager.TestUtils
 
+open MF.Utils
 open MF.ErrorHandling
 
 let okOrFail = function
@@ -28,11 +29,23 @@ let provider = [
         Description = "Simple rename heic and jpeg files"
         InputDir = "heic"
         Expected = [
+            "i_0.heic"
+            "i_20221023T161201_97cfd418.heic"
+            "i_20221103T104402_dbaddf33.jpeg"
+        ]
+        ExtraArgs = []
+    }
+    {
+        Description = "Simple rename heic and jpeg files - also create subdirs"
+        InputDir = "heic"
+        Expected = [
             "2022/10/i_20221023T161201_97cfd418.heic"
             "2022/11/i_20221103T104402_dbaddf33.jpeg"
             "i_0.heic"
         ]
-        ExtraArgs = []
+        ExtraArgs = [
+            "--" + CommonOptions.EvenCreateSubDir
+        ]
     }
     {
         Description = "Rename and re-hash heic and jpeg files, in the wrong month dir"
@@ -42,7 +55,7 @@ let provider = [
             "2022/11/i_20221103T104402_dbaddf33.jpeg"
         ]
         ExtraArgs = [
-            "--re-hash"
+            "--" + CommonOptions.ReHashAgain
         ]
     }
 ]
