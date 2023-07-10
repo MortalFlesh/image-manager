@@ -388,13 +388,6 @@ module Crc32 =
     //CRC32 from ASCII string
     let crc32OfString = crc32OfAscii >> sprintf "%x"
 
-[<System.Obsolete("Use from ConsoleApplication")>]
-module CommandHelp =
-    let commandHelp lines = lines |> String.concat "\n\n" |> Some
-
-    /// Concat two lines into one line for command help, so they won't be separated by other empty line
-    let inline (<+>) line1 line2 = sprintf "%s\n%s" line1 line2
-
 [<RequireQualifiedAccess>]
 module internal ProcessedItems =
     open System.Collections.Concurrent

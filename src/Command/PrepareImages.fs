@@ -9,11 +9,10 @@ open MF.ImageManager
 open MF.ImageManager.Prepare
 open MF.Utils
 open MF.Utils.Logging
-open MF.Utils.CommandHelp
 
 [<RequireQualifiedAccess>]
 module PrepareCommand =
-    let help = commandHelp [
+    let help = Help.lines [
         "The <c:dark-green>{{command.name}}</c> prepares files to manually handle:"
         "        <c:dark-green>dotnet {{command.full_name}}</c> <c:dark-yellow>path-to-target-dir/</c>"
         ""
