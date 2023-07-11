@@ -7,6 +7,14 @@ open System.IO
 open MF.ErrorHandling
 open MF.Utils
 
+[<AutoOpen>]
+module Utils =
+    let okOrFail = function
+        | Ok ok -> ok
+        | Error error -> failtestf "Fail on %A" error
+
+    let runOrFail xA = xA |> Async.RunSynchronously |> okOrFail
+
 [<RequireQualifiedAccess>]
 module FileSystem =
     let inline (</>) a b = Path.Combine(a, b)
@@ -22,13 +30,19 @@ module FileSystem =
 
     let private scenarioDir testName = "scenarios" </> (testName |> testDir)
 
-    let prepareFromFixtures (testName: string) dir =
-        let debug = false
-        let sourceDir = "fixtures" </> dir
+    /// Delete previous scenario dir and create new one at scenarios/{testName}
+    let prepareTargetDir (testName: string) =
         let targetDir = scenarioDir testName
-
         if Directory.Exists(targetDir) then Directory.Delete(targetDir, true)
         Directory.ensure(targetDir)
+        targetDir
+
+    /// Copy files from fixtures/{dir} to scenarios/{testName}/...
+    let prepareFromFixtures (testName: string) dir =
+        let debug = false
+        let sourceDir = "Fixtures" </> dir
+        let targetDir = prepareTargetDir testName
+
         if debug then printfn "Source dir %s; Target dir: %s" sourceDir targetDir
 
         Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories)
@@ -53,6 +67,7 @@ module FileSystem =
             yield! dir |> Directory.EnumerateFiles
             yield! dir |> Directory.EnumerateDirectories |> Seq.collect (tree testName)
         ]
+        |> List.filter (fun f -> not (f.Contains(".DS_Store")))
         |> List.sort
         |> List.map (fun f ->
             f

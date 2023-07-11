@@ -359,7 +359,6 @@ module Hash =
     module Cache =
         open Microsoft.Extensions.Logging
         open MF.ConsoleApplication
-        open MF.Utils.Progress
         open MF.Utils.ConcurrentCache
 
         let private cache: Cache<FullPath, Hash * Extension> = Cache.empty()

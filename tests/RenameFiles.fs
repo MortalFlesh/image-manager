@@ -11,12 +11,6 @@ open MF.ImageManager.TestUtils
 open MF.Utils
 open MF.ErrorHandling
 
-let okOrFail = function
-    | Ok ok -> ok
-    | Error error -> failtestf "Fail on %A" error
-
-let runOrFail xA = xA |> Async.RunSynchronously |> okOrFail
-
 type Scenario = {
     Description: string
     InputDir: string
@@ -58,6 +52,48 @@ let provider = [
             "--" + CommonOptions.ReHashAgain
         ]
     }
+    {
+        Description = "Rename files, in the wrong month dir but keep others in a correct or manual directories"
+        InputDir = "partially-renamed-and-sorted"
+        Expected = [
+            "2022/01/i_20221023T161201_97cfd418.heic"
+            "2022/01/i_20221103T104402_dbaddf33.jpeg"
+            "2022/04/i_20220401T141648_9afe0fba.jpeg"
+            "2022/manual/i_20220416T105242_4ac39dd7.jpeg"
+            "2022/manual/i_20221004T162658_b05b7f6b.jpeg"
+        ]
+        ExtraArgs = []
+    }
+    {
+        Description = "Rename and re-hash files, in the wrong month dir but keep others in a correct or manual directories"
+        InputDir = "partially-renamed-and-sorted"
+        Expected = [
+            "2022/04/i_20220401T141648_9afe0fba.jpeg"
+            "2022/10/i_20221023T161201_97cfd418.heic"
+            "2022/11/i_20221103T104402_dbaddf33.jpeg"
+            "2022/manual/i_20220416T105242_4ac39dd7.jpeg"
+            "2022/manual/i_20221004T162658_b05b7f6b.jpeg"
+        ]
+        ExtraArgs = [
+            "--" + CommonOptions.ReHashAgain
+        ]
+    }
+    {
+        Description = "Rename and re-hash files, in the wrong month dir but recreate even manual directories"
+        InputDir = "partially-renamed-and-sorted"
+        Expected = [
+            "2022/04/i_20220401T141648_9afe0fba.jpeg"
+            "2022/04/i_20220416T105242_4ac39dd7.jpeg"
+            "2022/10/i_20221004T162658_b05b7f6b.jpeg"
+            "2022/10/i_20221023T161201_97cfd418.heic"
+            "2022/11/i_20221103T104402_dbaddf33.jpeg"
+        ]
+        ExtraArgs = [
+            "--" + CommonOptions.ReHashAgain
+            "--" + CommonOptions.EvenCreateSubDir
+            "--" + CommonOptions.RootDir + "={TARGET_DIR}"
+        ]
+    }
 ]
 
 [<Tests>]
@@ -66,7 +102,7 @@ let renameFilesTest =
         yield!
             provider
             |> List.map (fun ({ Description = desc; InputDir = dir; Expected = expected; ExtraArgs = extraArgs }) ->
-                testCase $"heic correctly - {desc}" <| fun _ ->
+                testCase desc <| fun _ ->
                     async {
                         let targetDir = dir |> FileSystem.prepareFromFixtures desc
                         do! Async.Sleep 200
@@ -77,7 +113,7 @@ let renameFilesTest =
                                 targetDir
                                 "--quiet"
 
-                                yield! extraArgs
+                                yield! extraArgs |> List.map (fun s -> s.Replace("{TARGET_DIR}", targetDir))
                             |]
                             |> ImageManager.run
                             |> okOrFail
@@ -86,7 +122,7 @@ let renameFilesTest =
                         do! Async.Sleep 200
 
                         let actual = FileSystem.tree desc targetDir
-                        Expect.equal actual expected "Desc"
+                        Expect.equal actual expected desc
                     }
                     |> Async.RunSynchronously
                 )
