@@ -2,12 +2,12 @@
 
 <!-- There is always Unreleased section on the top. Subsections (Add, Changed, Fix, Removed) should be Add as needed. -->
 ## Unreleased
+
+## 2.0.0 - 2023-07-13
 - Update dependencies
-- Use .net 6.0
 - Use .net 7.0
 - Add prefix option
 - Add rename command by image meta data
-- Use net6.0
 - Log warnings and errors to file
 - Add cache for hashes
 - Allow to clear cache in rename command for processed items
