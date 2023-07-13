@@ -8,6 +8,12 @@ nuget MF.ConsoleApplication ~> 5.0
 nuget MetadataExtractor ~> 2.4
 nuget MediaToolkit
 nuget MediaToolkit.NetCore
+nuget System.Drawing.Common ~> 6.0
+nuget Microsoft.Extensions.Logging
+nuget NReco.Logging.File ~> 1.1
+
+nuget Expecto
+nuget YoloDev.Expecto.TestSdk
 
 // [ FAKE GROUP ]
 group Build

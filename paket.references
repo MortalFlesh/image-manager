@@ -3,3 +3,6 @@ FSharp.Data
 MF.ConsoleApplication
 MetadataExtractor
 MediaToolkit.NetCore
+System.Drawing.Common
+Microsoft.Extensions.Logging
+NReco.Logging.File

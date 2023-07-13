@@ -10,9 +10,13 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest]
+        os:
+          - name: macos-latest
+            run: ./build.sh
+          - name: windows-latest
+            run: ./build.cmd
         dotnet: [7.0.305]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os.name }}
 
     steps:
       - uses: actions/checkout@v2
@@ -26,13 +30,18 @@ jobs:
         run: dotnet tool restore
 
       - name: Run tests
-        run: ./build.sh
+        run: ${{ matrix.os.run }}
 
   tests:
     strategy:
       matrix:
+        os:
+          - name: macos-latest
+            run: ./build.sh
+          - name: windows-latest
+            run: ./build.cmd
         dotnet: [7.0.305]
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os.name }}
 
     steps:
       - uses: actions/checkout@v2
@@ -42,8 +51,5 @@ jobs:
         with:
           dotnet-version: ${{ matrix.dotnet }}
 
-      - name: Restore tools
-        run: dotnet tool restore
-
       - name: Run tests
-        run: ./build.sh -t tests
+        run: ${{ matrix.os.run }} -t lint  # run lint only, since tests are not generating same hashes on different platforms

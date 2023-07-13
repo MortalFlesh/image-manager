@@ -28,3 +28,7 @@ tools/
 !bin/console
 AssemblyInfo.fs
 dist/
+
+.config.*
+logs/
+.hash-cache.txt

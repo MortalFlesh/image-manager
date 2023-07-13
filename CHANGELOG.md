@@ -5,6 +5,12 @@
 - Update dependencies
 - Use .net 6.0
 - Use .net 7.0
+- Add prefix option
+- Add rename command by image meta data
+- Use net6.0
+- Log warnings and errors to file
+- Add cache for hashes
+- Allow to clear cache in rename command for processed items
 
 ## 1.0.0 - 2020-10-26
 - Initial implementation

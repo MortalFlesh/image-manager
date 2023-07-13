@@ -1,0 +1,7 @@
+{
+    "target-subdir": "year-month",
+    "fallback": "fallback",
+    "source": [
+        "fixtures/iCloudPhotos"
+    ]
+}
